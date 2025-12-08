@@ -118,7 +118,7 @@ function buildTextResponse(text, isError) {
  * @returns {Object} 返回格式: { tools: [{ name: string, description: string, inputSchema: Object }] }
  */
 function listTools() {
-	return { tools: window.customeTools.toolList.concat(window.jdbToolList) };
+	return { tools: window.customeTools.toolList/*.concat(window.jdbToolList)*/ };
 }
 
 /**
@@ -263,7 +263,7 @@ function searchTools(keywords) {
 		.filter(result => result !== null) // 过滤掉不匹配的结果
 		.sort((a, b) => b.score - a.score); // 按权重降序排序(命中关键词越多排在前面)
 
-	return results; // 返回排序后的结果
+	return results.filter(result => result.score > 0).slice(0, 10); // 返回排序后的结果,最多返回10条结果
 }
 
 /**

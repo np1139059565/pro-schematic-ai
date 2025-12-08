@@ -98,6 +98,21 @@ resp.data = { success: true, component };
 return resp;
 \`\`\`
 
+**错误示例**（禁止使用）:
+\`\`\`javascript:read
+// ❌ 错误:使用了try...catch包裹代码和立即执行的异步函数
+const resp = { data: null, errorMessage: null, stack: null };
+(async () => {
+  try {
+    const tools = await mcpEDA.listTools();
+    resp.data = { tools };
+  } catch (err) {
+    resp.errorMessage = err?.message || String(err);
+    resp.stack = err?.stack || null;
+  }
+  return resp;
+})();
+
 **注意**:必须返回包含 data/errorMessage/stack 的对象,异步操作使用 await.
 
 对话角色:

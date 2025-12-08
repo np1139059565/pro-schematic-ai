@@ -558,3 +558,7 @@ body {
 	overflow-y: auto;
 	border-left: 3px solid #667eea;
 }
+
+[data-dialog-tagitem="lc_modal_dialog__body"]{
+	max-height:none !important;
+}
