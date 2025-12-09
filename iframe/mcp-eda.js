@@ -33,7 +33,7 @@ async function callTool(params) {
 
 		// 执行工具处理函数
 		// 自定义工具使用对象参数，原生API使用位置参数
-		const result = window.customeTools[name.replace('.', '$')] 
+		const result = window.customeTools[name.replace('.', '$')]
 			? await tool(args || {})
 			: await tool(...Object.values(args) || {});
 
@@ -105,7 +105,7 @@ function validateArguments(args, schema) {
  */
 function buildTextResponse(text, isError) {
 	return {
-		content: [ 
+		content: [
 			{ // 单条内容
 				type: "text", // 内容类型标记
 				text, // 具体文本内容
@@ -224,7 +224,7 @@ console.log('[MCP] EDA MCP 已初始化，通过 window.mcpEDA 访问');
  * @returns 返回格式: { tools: [{ name: string, description: string, inputSchema: Object }] }
  */
 
-function searchTools({keywords}) {
+function searchTools({ keywords }) {
 
 	// 如果关键词数组为空,返回空数组
 	if (keywords.length === 0) {
@@ -264,8 +264,15 @@ function searchTools({keywords}) {
 			return null; // 不匹配,返回null
 		})
 		.filter(result => result !== null) // 过滤掉不匹配的结果
-		.sort((a, b) => b.score - a.score); // 按权重降序排序(命中关键词越多排在前面)
-
+		.sort((a, b) => b.score - a.score) // 按权重降序排序(命中关键词越多排在前面)
+		//如果自定义api'className$methodName'与原api'className.methodName'相同,则将之替换
+		.map(result => {
+			const customApiName = result.name.replace('$', '.');
+			if (window.customeTools[customApiName] !== null) {
+				return window.customeTools[customApiName];
+			}
+			return result;
+		});
 	return results.filter(result => result.score > 0).slice(0, 10); // 返回排序后的结果,最多返回10条结果
 }
 
@@ -385,7 +392,7 @@ async function sch_PrimitiveWire$create({ line, net = null, color = '#000000', l
 	if (!Array.isArray(line) || line.length < 4 || line.length % 2 !== 0) {
 		throw new Error('line 必须是长度不少于4且为偶数的坐标数组');
 	}
-	if(color===null || color===undefined) {
+	if (color === null || color === undefined) {
 		throw new Error('color 可以不传,但必须不能为null或undefined');
 	}
 	const wire = await eda.sch_PrimitiveWire.create(line, net, color, lineWidth, lineType);
