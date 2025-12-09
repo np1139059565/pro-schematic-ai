@@ -167,36 +167,37 @@ async function readResource(params) {
  */
 function listPrompts() {
 	// 包装为符合 MCP 规范的返回格式
-	return { prompts: [] };
+	return { prompts: window.jdbPromptList };
 }
 
 /**
  * 获取提示 (符合 MCP 规范)
- * @param {Object} params 参数对象，包含 name 和 arguments
+ * @param {Object} params 参数对象 {name: string, arguments: {name: string}}
  * @param {string} params.name 提示名称
- * @param {Object} params.arguments 提示参数对象
+ * @param {string} params.arguments.name 提示参数名称
+ * @param {Object} params.arguments 提示参数对象 {name: string}
  * @returns {Object} 返回格式: { description: string, messages: [{ role: string, content: { type: string, text: string } }] }
  */
 async function getPrompt(params) {
 	// 从参数对象中提取 name 和 arguments
 	const { name, arguments: _args } = params;
 
-	// TODO: 实现提示获取逻辑，使用 _args 参数（当前未使用，标记为 _args 表示预留）
-	// if (!prompts.has(name)) {
-	// 	const error = new Error(`提示不存在: ${name}`);
-	// 	error.code = 'PROMPT_NOT_FOUND';
-	// 	throw error;
-	// }
-	// const prompt = prompts.get(name);
-	// return prompt;
-
-	// 暂时忽略未使用的 _args 参数（预留用于后续实现）
-	void _args;
+	// 从提示列表中查找提示
+	const prompt = window.jdbPromptList.find(prompt => prompt.name === name);
+	const message = prompt.messages.find(message => message.role === _args.name);
 
 	// 返回符合 MCP 规范的格式
 	return {
-		description: `提示: ${name}`,
-		messages: []
+		description: prompt.description,
+		messages: [
+			{
+				role: message.role,
+				content: {
+					type: message.content.type,
+					text: message.content.text,
+				},
+			}
+		]
 	};
 }
 
@@ -223,7 +224,7 @@ console.log('[MCP] EDA MCP 已初始化，通过 window.mcpEDA 访问');
  * @returns 返回格式: { tools: [{ name: string, description: string, inputSchema: Object }] }
  */
 
-function searchTools(keywords) {
+function searchTools({keywords}) {
 
 	// 如果关键词数组为空,返回空数组
 	if (keywords.length === 0) {
@@ -384,6 +385,9 @@ async function sch_PrimitiveWire$create({ line, net = null, color = '#000000', l
 	if (!Array.isArray(line) || line.length < 4 || line.length % 2 !== 0) {
 		throw new Error('line 必须是长度不少于4且为偶数的坐标数组');
 	}
+	if(color===null || color===undefined) {
+		throw new Error('color 可以不传,但必须不能为null或undefined');
+	}
 	const wire = await eda.sch_PrimitiveWire.create(line, net, color, lineWidth, lineType);
 	return { content: wire };
 }
@@ -418,7 +422,7 @@ window.customeTools = {
 	toolList: [
 		{
 			name: 'searchTools',
-			description: '搜索并按权重降序排序工具列表,最多返回10条结果;支持多个关键词组合搜索,多个关键词使用OR逻辑;为了提高搜索精准度,应该尽量使用中文搜索,并且组合多个关键词扩大搜索范围',
+			description: '搜索mcp工具列表,并按权重降序排序,最多返回10条结果,支持多个关键词组合搜索,多个关键词使用OR逻辑;先查看mcp工具的提示 guideline_api_search_prompt。',
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -511,7 +515,7 @@ window.customeTools = {
 		},
 		{
 			name: 'sys_FileManager$getDocumentFootprintSources',
-			description: '获取文档中所有封装的源码信息，返回封装UUID和对应的文档源码字符串；可用于解析画布信息、封装数据等',
+			description: '获取文档中所有封装的源码信息，返回封装UUID和对应的文档源码字符串；先查看mcp工具的提示 sch_source_code_parse_prompt。',
 			inputSchema: {
 				type: 'object',
 				properties: {},

@@ -1,5 +1,303 @@
 // jdb.js:缓存数据库
 
+// 资源列表(数据、信息、内容)
+window.jdbResourceList = [
+	{
+		uri: 'standardCode1',
+		name: '规范源码1',
+		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
+		mimeType: 'text/plain',
+		content: window.standardCode1,
+	},
+	{
+		uri: 'standardCode2',
+		name: '规范源码2',
+		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
+		mimeType: 'text/plain',
+		content: window.standardCode2,
+	},
+	{
+		uri: 'standardCode3',
+		name: '规范源码3',
+		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
+		mimeType: 'text/plain',
+		content: window.standardCode3,
+	},
+];
+
+// 提示列表(流程、步骤、规则)
+window.jdbPromptList = [
+	{
+		name: 'eda_workflow_prompt',
+		description: '原理图交互流程速览与回复规范',
+		messages: [
+			{
+				role: 'workflow_overview',
+				content: {
+					type: 'text',
+					text: `
+问答/操作分支；操作类采用 read→write 循环:
+- write 前不可用陈旧坐标/元件数据,必须先 read 最新数据
+- 根据数据小心验证 write 参数是否正确，再 write
+- 完成后若仍有待办继续下一轮
+`
+				}
+			},
+			{
+				role: 'workflow_steps',
+				content: {
+					type: 'text',
+					text: `
+原理图交互流程:
+1) 判断用户意图: 询问类(仅读取/回答) 与 操作类(需要修改)
+2) 询问类: 编写 read 代码块获取所需信息 -> 根据返回给出回答
+3) 操作类循环:
+   a. 先写 read 代码块获取最新画布/元件/导线状态
+   b. 计算方案后写 write 代码块执行修改
+   c. 系统返回结果后, 如未完成继续下一轮 read → write
+4) 写前必须使用最新状态, 禁用陈旧坐标/元件数据
+`
+				}
+			},
+			{
+				role: 'reply_style',
+				content: {
+					type: 'text',
+					text: `
+对话与回复规范:
+- 角色: system(自动执行/状态反馈), user(用户输入), assistant(AI 回复/生成代码块)
+- 回复使用中文, 专业简洁, 不重复过程描述
+- system检测到代码块时会按类型自动执行,不能在一次对话中返回多个代码块; 无代码块则视为结束
+- 避免冗长, 直接给出结论与必要步骤
+
+**强制要求**:
+- 每次执行操作前,必须在回复开头明确说明基于哪条提示,格式为:"根据 [提示名称] 的[描述],我将..."
+- 例如:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将按功能分组放置元件"
+- 例如:"根据 guideline_smart_routing_prompt 的智能布线策略,我将连接电源线,确保最小间距>=50mil"
+- 例如:"根据 guideline_drc_repair_prompt 的事后校验提示,我将检查所有导线的间距和角度"
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_tool_usage_prompt',
+		description: 'mcp工具集使用规范',
+		messages: [
+			{
+				role: 'tool_usage',
+				content: {
+					type: 'text',
+					text: `
+mcp工具集使用规范:
+- 先使用 mcpEDA.listTools 查询可用自定义工具集
+- 如果没有满足要求的API，再用 mcpEDA.callTool({ name: 'searchTools', arguments: { keywords: [...] } }) 进行全量搜索原生API。
+- 禁止直接调用未查询的 API 名称, 避免 getComponents 等不存在的名称
+- 调用 mcpEDA.callTool 时按 inputSchema 提供参数, 不缺省必填项
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_api_search_prompt',
+		description: '搜索 API 流程与调用前检查',
+		messages: [
+			{
+				role: 'api_search_flow',
+				content: {
+					type: 'text',
+					text: `
+- 优先用 mcpEDA.listTools检查有没有满足要求的API,这里面是很小一部分稳定的自定义API,并不是全量的自定义API。
+- 如果没有满足要求的API，再用searchTools进行全量搜索，将返回相关度前10的API,因为原生API数量太庞大了,而且很多API都是无效的。
+搜索 API 标准流程:
+1) 明确意图并拆关键词: 业务动作 + 对象 + 约束, 如 ["search","component","library","搜索","元件","库",...]。
+2) 调用 searchTools: await mcpEDA.callTool({ name: 'searchTools', arguments: { keywords: [...] } });
+3) 解析结果: 将按 score 降序取前 N (默认前10), 如果结果大于10,则说明结果不够精准,需要补充/替换/调整关键词重搜,直到结果小于10,大于0为止。
+4) 若无命中: 补充/替换/调整关键词重搜; 关键词无关中英文,关键词越多,最后的搜索结果将越准确。
+5) 选定 API 后再 callTool, 严格按 inputSchema 传参, 不得遗漏必填。
+6) 写操作前必须先 read 校验最新状态, 避免用陈旧数据。
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_layout_planning_prompt',
+		description: '前期布局规划与网络标签策略',
+		messages: [
+			{
+				role: 'layout_planning',
+				content: {
+					type: 'text',
+					text: `
+前期布局规划:
+- 功能分组: 按电源/信号/控制/接口等模块集中摆放,减少跨模块长距离布线
+- 元件间距: 计算引脚/封装边界,模块之间预留>=200mil 安全距离
+- 网络标签优先: 相同网络标签视为同一路径,优先用标签替代跨图直线,源头减少交叉
+- 流向布局: 按输入→处理→输出的信号流向摆放,避免反向走线
+- 数据获取: 先 read 元件/网络信息,再规划坐标与分组
+
+**强制要求**:
+- 在放置元件前,必须先read获取画布大小和现有元件位置
+- 在代码中必须计算元件间距,确保模块之间预留>=200mil安全距离
+- 必须在回复中明确说明:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将..."
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_smart_routing_prompt',
+		description: '绕行/推挤与最小间距智能布线',
+		messages: [
+			{
+				role: 'smart_routing',
+				content: {
+					type: 'text',
+					text: `
+智能布线策略:
+- 模式: 新导线遇障碍优先绕行,不可绕行时尝试推挤,禁止直接重叠
+- 最小间距: 导线-导线>=50mil; 导线-元件边界>=100mil,实时检测违规立即重算路径
+- 拐角: 优先45°走线,禁止随意锐角; 必要时用两段45°替代90°
+- 路径探测: 预检查候选路径与现有导线/元件的碰撞,选无碰撞且长度/拐点数最优方案
+- 动态调整: 绘制过程中若检测到重叠/压盖,即时偏移或改道
+
+**强制要求**:
+- 在生成write代码块前,必须先read获取所有现有导线和元件坐标
+- 在代码中必须实现完整的间距检查函数,验证导线-导线距离>=50mil,导线-元件边界距离>=100mil
+  * 函数必须遍历所有现有导线和元件,计算新导线每个线段与它们的距离
+  * 如果距离小于最小值,必须重算路径,直到所有线段都符合间距要求
+- 在代码中必须实现角度检查函数,确保走线优先使用45°角,避免锐角
+  * 函数必须检查路径中每个拐角的角度,优先使用45°、90°、135°等标准角度
+  * 如果发现锐角(<45°且不是0°),必须调整路径,使用45°或90°替代
+- 在代码中必须实现碰撞检测函数,检查新导线与现有导线/元件的碰撞
+  * 函数必须检查新导线的每个线段是否与现有导线重叠或交叉
+  * 函数必须检查新导线是否穿越元件边界(保持>=100mil安全距离)
+  * 如果检测到碰撞,必须重算路径,绕行或推挤,直到无碰撞
+- 路径计算函数必须调用上述三个检查函数,如果检测到违规,必须重算路径,直到符合规范为止
+- 必须在回复中明确说明:"根据 guideline_smart_routing_prompt 的智能布线策略,我将连接[网络名称],确保最小间距>=50mil,优先使用45°走线"
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_routing_constraints_prompt',
+		description: '布线约束与信号流向规则',
+		messages: [
+			{
+				role: 'routing_constraints',
+				content: {
+					type: 'text',
+					text: `
+布线约束:
+- 信号流向: 按输入→处理→输出的顺序布线,减少回流与交叉
+- 拐角与层次: 45°优先,减少不必要的折线段; 分段时尽量共线
+- 优先级: 关键信号(时钟/高速差分/敏感模拟)优先布,确保最短/最少拐点并留隔离区
+- 边界规则: 禁止穿越元件包络,保持安全间距; 先 read 最新坐标后再 write
+- 复用: 发现已有可用网络标签/导线路径时优先复用,避免重复新线
+
+**强制要求**:
+- 布线前必须先read获取所有现有导线和元件坐标,检查是否有可复用的网络标签或导线路径
+- 关键信号(电源、地线、时钟等)必须优先布线,确保最短路径和最少拐点
+- 必须在回复中明确说明:"根据 guideline_routing_constraints_prompt 的布线约束,我将..."
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_routing_algorithm_prompt',
+		description: 'A* / 遗传算法等全局布线优化',
+		messages: [
+			{
+				role: 'routing_algorithm',
+				content: {
+					type: 'text',
+					text: `
+算法优化:
+- 路径搜索: 可用 A* 评估(距离+拐点+碰撞罚分),生成候选路径集合
+- 全局优化: 用遗传/模拟退火等全局搜索对多条导线同时优化,目标最小总长/拐点/违规
+- 约束编码: 将最小间距、45°偏好、障碍物、关键网优先级编码进代价函数
+- 拓扑识别: 识别星型/总线/树型等拓扑,针对拓扑选择分支/汇聚策略
+- 迭代校验: 每轮生成方案后即时碰撞检测; 保留最优解并输出可执行的线段序列
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_drc_repair_prompt',
+		description: '事后 DRC 校验与二次修正闭环',
+		messages: [
+			{
+				role: 'drc_repair',
+				content: {
+					type: 'text',
+					text: `
+事后校验与修正:
+- 多角度检查: 导线-导线,导线-元件,导线-引脚,拐角锐角,最小间距,定位交叉/重叠/间距不足
+- 闭环修正: 对违规线重算路径(沿用最小间距+45°+推挤/绕行),修正后再次检查,直至无违规
+- 状态刷新: 每次修正前必须 read 最新布线状态,避免用陈旧坐标
+- 记录与优先级: 先修关键网违规,再修普通网; 修完一条立即复检
+
+**强制要求**:
+- 完成所有布线操作后,必须执行DRC校验代码块(read类型)
+- DRC校验必须检查: 导线-导线间距(>=50mil)、导线-元件边界间距(>=100mil)、导线-引脚间距、拐角是否锐角、是否存在交叉/重叠
+- **如果发现违规,必须立即生成write代码块修正违规线,不能仅报告违规而不修正**
+  * 修正代码块必须: 1)先read获取最新导线和元件状态 2)对每条违规线重算路径,确保符合最小间距和45°角度要求 3)使用sch_PrimitiveWire$create重新创建修正后的导线
+  * 修正后必须再次执行DRC校验代码块,检查是否还有违规
+  * 如果仍有违规,继续修正,直到DRC校验通过(无违规)为止
+- 必须在回复中明确说明:"根据 guideline_drc_repair_prompt 进行DRC校验"或"根据 guideline_drc_repair_prompt 修正违规线"
+- **禁止在发现违规后仅给出建议而不执行修正,必须实际生成修正代码块并执行**
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_error_recovery_prompt',
+		description: '错误恢复与重试策略',
+		messages: [
+			{
+				role: 'error_recovery',
+				content: {
+					type: 'text',
+					text: `
+错误恢复策略:
+- write 失败后先执行 read 获取最新状态
+- 识别并清理已成功放置的残留对象, 防止重复放置或脏数据
+- 修正参数/逻辑后重算方案再 write, 主动重试不超过 2 次
+- 仍失败时向用户说明原因并暂停
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'sch_source_code_parse_prompt',
+		description: '原理图源码规范解析标准流程',
+		messages: [
+			{
+				role: 'sch_source_parse',
+				content: {
+					type: 'text',
+					text: `
+解析原理图源码字符串的规范流程：
+1) 先界定目标字段：如 Width/Height/net/component 等，避免全文阅读
+2) 预检：用 includes/索引先判断目标字段是否存在；缺失则返回默认或提示
+3) 按行拆分：source.split('\\n') → 对每行再按 '|' 拆分 → 去空 → flatten
+4) 结构化：对拆分片段逐个 JSON.parse，异常立即捕获并跳过
+5) 筛选：仅处理 key 命中的对象（如 key === 'Width' / 'Height' / 目标字段）；对数值用 parseInt/parseFloat
+6) 兜底：未命中时使用安全默认值，并记录 warn；命中时输出解析结果
+7) 返回：仅返回需要的字段对象，避免回传整段大字符串
+`
+				}
+			}
+		]
+	}
+]
 
 // mcp工具格式的api快速查询列表
 window.jdbToolList = [
@@ -17901,30 +18199,6 @@ window.jdbToolList = [
 		}
 	}
 ];
-
-window.jdbResourceList=[
-	{
-		uri: 'standardCode1',
-		name: '规范源码1',
-		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
-		mimeType: 'text/plain',
-		content: window.standardCode1,
-	},
-	{
-		uri: 'standardCode2',
-		name: '规范源码2',
-		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
-		mimeType: 'text/plain',
-		content: window.standardCode2,
-	},
-	{
-		uri: 'standardCode3',
-		name: '规范源码3',
-		description: '规范源码是原理图设计专家的示例代码,用于评估ai助手生成原理图的质量,比如一些导线的部署是否绕路,是否重叠,经典场景应该怎么布线等,注意:示例代码非常庞大,不应该频繁调用',
-		mimeType: 'text/plain',
-		content: window.standardCode3,
-	},
-]
 // 规范源码1
 window.standardCode1 = `
 {"type":"DOCHEAD"}||{"docType":"SCH_PAGE","client":"a63817916fe6def8","uuid":"d26e8b320e4345889d812298d4e33f9f","updateTime":1764584744375,"version":"1764584744375"}|

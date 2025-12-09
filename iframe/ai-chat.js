@@ -28,55 +28,35 @@ let isStop = false; // 是否停止
 
 // 系统消息 - 用于描述 AI 角色和职责,用户可以在控制台临时修改系统消息,对ai助手进行定制化
 window.top.systemMessage = `
-你是原理图设计AI助手,专门帮助用户进行电子电路原理图设计,运行在嘉立创在线web开发平台的iframe扩展应用中.
+你是原理图设计AI助手,运行在嘉立创在线web开发平台的iframe扩展中,专注电子电路原理图设计。
 
-MCP工具集:
-- 通过 mcpEDA.listTools()/listResources()/readResource()/callTool(...) 获取或调用工具,工具列表包含搜索工具/画布尺寸等能力
+对话角色:
+本对话系统包含三种角色,你需要清楚理解每种角色的作用:
+1. system(扩展自动执行):定义你的角色、职责和工作流程,还会自动执行你返回的代码块,并将执行结果以system角色消息反馈给你(格式为JSON字符串,包含data/errorMessage/stack,如果内容太长会以文件的形式传给你,请自行解析),直到没有返回代码为止(对话结束)
+2. user(用户消息):用户的问题和需求,以自然语言形式发送给你
+3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块（使用\`\`\`javascript:read或\`\`\`javascript:write格式）
 
-**工具使用规则**:
-- 如果不确定工具名称，必须先调用 mcpEDA.listTools 或 mcpEDA.searchTools 查询可用工具
-- 禁止未查询就使用类似 getComponents、getAllComponents 等不存在的API名称
 
 工作流程:
-1. 分析用户需求:
-   - 判断用户意图:是询问原理图信息(回答问题)还是需要修改原理图(执行操作)
-   - 询问类:用户想了解当前原理图状态、元件信息、设计建议等
-   - 操作类:用户要求创建/修改/删除元件、导线、调整布局等
+1.收到user的消息后,先通过代码块查看mcp工具的提示,根据提示中的工作流程来执行。
+2.如果你打算执行某个操作,请先通过代码块查看mcp工具的提示,根据提示中的工作流程来执行。
+3.必须明确告诉用户,你的操作是基于mcp的哪条提示来执行的,格式为:"根据 [提示名称] 的[描述],我将..."。例如:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将按功能分组放置元件"。
+4.执行布线操作时,必须遵循 guideline_smart_routing_prompt 和 guideline_routing_constraints_prompt 的要求,在代码中实现最小间距检查(导线-导线>=50mil,导线-元件边界>=100mil)、45°走线优先、碰撞检测等。
+5.完成布线后,必须根据 guideline_drc_repair_prompt 进行DRC校验,检查导线-导线、导线-元件、导线-引脚、拐角锐角、最小间距等违规情况,并修正违规线。
 
-2. 回答问题流程:
-   - 编写read代码块,获取鼠标所选的元件列表,然后再根据元件获取信息(如元件名称、引脚、属性等)
-   - 系统自动执行read代码块,将结果以system角色消息反馈给你(JSON格式,包含data/errorMessage/stack)
-   - 根据反馈结果,结合原理图信息给出专业回答
+回复要求:
+- 使用中文,专业准确,结合实际原理图信息,提供可操作建议
+- 回复简洁明了,避免重复相同内容和冗余说明
+- 代码执行是自动的,无需在回复中重复说明"系统会执行代码"等
+- 直接给出结果和结论,无需重复过程描述
 
-3. 修改原理图流程(循环执行):
-   - 第一步:编写read代码块获取当前原理图状态(画布大小/元件列表/导线等),系统执行read代码并反馈结果
-   - 第二步:你根据结果计算修改方案,编写write代码块,执行修改操作(创建/修改/删除元件等)
-   - 第三步:系统执行write代码并反馈结果,你检查是否完成所有修改
-   - 循环条件:如果还有未完成的修改,继续返回代码块;如果所有修改已完成且无错误,则不再返回代码块,对话结束
-   - 重要规则:
-     * 元件放置大小计算:放置元件时必须考虑元件大小,避免重叠
-       - 优先方案:通过元件的引脚列表获取引脚位置,计算元件的大致边界范围(最小X/Y到最大X/Y)
-       - 备用方案:如果无法获取引脚信息,必须至少设置200mil的安全距离,确保元件之间不会重叠
-       - 放置新元件时,需要检查与现有元件的位置关系,确保有足够的间距
-     * 写入前状态同步:每次执行write代码块之前,必须先执行read代码块获取当前原理图的最新状态,因为原理图随时可能变化,不能使用过时的状态信息
-	 * 导线绘制:绘制导线时,不能压盖元件,必须保证导线与元件之间有足够的间距,导线与导线之间不能重叠.
 
-4. 错误处理策略:
-   - 执行错误时:系统会在system消息中返回errorMessage和stack信息
-   - 分析错误:检查错误原因(API调用错误、参数错误、逻辑错误等)
-   - write代码块错误处理(关键):
-     * 如果write代码块执行失败,必须先执行read代码块获取当前原理图状态
-     * 识别并清除已成功放置的元件(因为可能只是部分失败,另一部分成功后元件就已经放下去了)
-     * 清除已成功的数据后,再重新计算修改方案并重试
-     * 这是为了避免重复放置元件或产生脏数据
-   - 自动修复:尝试查询正确的API、修正参数、调整逻辑等
-   - 重试机制:如果修复后仍有错误,最多重试2次(指AI主动修复并重新执行代码,不是系统自动重试)
-   - 失败处理:重试2次后仍失败,向用户说明错误原因并暂停,等待用户进一步指示
-
-代码执行格式:
-**代码块类型**:
-- 只读操作:\`\`\`javascript:read（获取信息,如画布大小、元件列表）
-- 写入操作:\`\`\`javascript:write（修改原理图,如创建元件、修改导线）
+代码块规范:
+- 返回代码块前面要有解释说明,告诉用户你要执行什么操作。
+- 代码块类型: \`\`\`javascript:read\`\`\` / \`\`\`javascript:write\`\`\`
+- 必须返回 { data, errorMessage, stack } 对象
+- 禁止包裹 try...catch 和立即执行的自调用形式; 按规范直接编写 await 逻辑
+- 每次只返回一段代码块, 不得多段
 
 **返回值格式**（必须）:
 \`\`\`javascript
@@ -104,11 +84,11 @@ return resp;
 
 **错误示例**（禁止使用）:
 \`\`\`javascript:read
-// ❌ 错误:使用了try...catch包裹代码和立即执行的异步函数
+// 错误:使用了try...catch包裹代码和立即执行的自调用形式,还没有使用mcpEDA.callTool调用API.
 const resp = { data: null, errorMessage: null, stack: null };
 (async () => {
   try {
-    const tools = await mcpEDA.listTools();
+    const tools = await eda.sch_PrimitiveComponent.getAll();
     resp.data = { tools };
   } catch (err) {
     resp.errorMessage = err?.message || String(err);
@@ -116,25 +96,13 @@ const resp = { data: null, errorMessage: null, stack: null };
   }
   return resp;
 })();
+\`\`\`
 
-**注意**:
-- 必须返回包含 data/errorMessage/stack 的对象,异步操作使用 await.
-- 每次只能返回一段代码块,不能返回多段代码块.
-
-对话角色:
-本对话系统包含三种角色,你需要清楚理解每种角色的作用:
-1. system(扩展自动执行):定义你的角色、职责和工作流程,还会自动执行你返回的代码块,并将执行结果以system角色消息反馈给你(格式为JSON字符串,包含data/errorMessage/stack),直到没有返回代码为止(对话结束)
-2. user(用户消息):用户的问题和需求,以自然语言形式发送给你
-3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块（使用\`\`\`javascript:read或\`\`\`javascript:write格式）
-
-回复要求:
-- 使用中文,专业准确,结合实际原理图信息,提供可操作建议
-- 回复简洁明了,避免重复相同内容和冗余说明
-- 代码执行是自动的,无需在回复中重复说明"系统会执行代码"等
-- 直接给出结果和结论,无需重复过程描述
-
-请以原理图设计专家身份,确保回答专业、准确、实用、简洁.
-`
+更多细则请通过资源/提示获取:
+- 资源: mcpEDA.listResources / mcpEDA.readResource
+- 提示: mcpEDA.listPrompts / mcpEDA.getPrompt
+- 工具使用说明: mcpEDA.listTools
+`;
 // 初始化函数
 function init() {
 	// 获取 DOM 元素
@@ -305,7 +273,7 @@ function handleAIError(error, loadingId = null, errorPrefix = 'AI 请求失败')
 	updateStatus('请求失败', 'error'); // 更新状态为错误
 
 	// 滚动到底部
-	scrollToBottom(); // 滚动到消息底部
+	// scrollToBottom(); // 滚动到消息底部
 }
 
 // ==================== 代码执行相关函数 ====================
@@ -339,7 +307,7 @@ async function executeCodeAndContinue(code, codeContainer, button) {
 	await continueConversationWithResult(result); // 继续对话
 
 	// 滚动到底部
-	scrollToBottom(); // 滚动到消息底部
+	// scrollToBottom(); // 滚动到消息底部
 }
 
 
@@ -390,6 +358,8 @@ function createWriteCodeButton(fragment, codeContainer, actionContainer) {
 	}; // 设置点击事件
 
 	actionContainer.appendChild(confirmBtn); // 将确认按钮添加到操作容器
+	scrollToBottom(); // 有代码块执行,所以滚动到消息底部
+
 }
 
 
@@ -397,40 +367,42 @@ function createWriteCodeButton(fragment, codeContainer, actionContainer) {
  * 处理发送消息
  */
 async function handleSendMessage() {
-	const message = messageInput.value.trim(); // 获取输入内容并去除首尾空格
-
-	// 检查消息是否为空
-	if (!message) {
-		return; // 如果消息为空,直接返回
-	}
-
-	// 重置停止状态
-	isStop = false; // 重置停止状态为 false
-
-	// 显示停止按钮
-	stopBtn.style.display = 'block'; // 显示停止按钮
-
-	// 禁用输入和发送按钮
-	setInputDisabled(true); // 禁用输入框
-	updateStatus('正在发送...', 'info'); // 更新状态为"正在发送"
-
-	// 处理用户消息的UI操作
-	prepareUserMessageUI(message); // 处理用户消息UI
-
-	// 将用户消息添加到对话历史
-	addUserMessageToHistory(message); // 添加到对话历史
-
-	// 添加加载指示器
-	const loadingId = addLoadingIndicator(); // 添加加载动画
-
+	let loadingId = null;
 	try {
+		const message = messageInput.value.trim(); // 获取输入内容并去除首尾空格
+
+		// 检查消息是否为空
+		if (!message) {
+			return; // 如果消息为空,直接返回
+		}
+
+		// 重置停止状态
+		isStop = false; // 重置停止状态为 false
+
+		// 显示停止按钮
+		stopBtn.style.display = 'block'; // 显示停止按钮
+
+		// 禁用输入和发送按钮
+		setInputDisabled(true); // 禁用输入框
+		updateStatus('正在发送...', 'info'); // 更新状态为"正在发送"
+
+		// 处理用户消息的UI操作
+		prepareUserMessageUI(message); // 处理用户消息UI
+
+		// 将用户消息添加到对话历史
+		addUserMessageToHistory(message); // 添加到对话历史
+
+		// 添加加载指示器
+		loadingId = addLoadingIndicator(); // 添加加载动画
+
+		// 滚动到底部
+		scrollToBottom(); // 滚动到消息底部
+
 		// 调用AI并处理响应
 		await callAIAndHandleResponse(loadingId); // 调用AI并处理响应
 
 		updateStatus('', ''); // 清空状态文本
 
-		// 滚动到底部
-		scrollToBottom(); // 滚动到消息底部
 	} catch (error) {
 		// 处理错误
 		handleAIError(error, loadingId, 'AI 请求失败'); // 统一错误处理
@@ -610,6 +582,8 @@ function createCodeFragment(fragment, contentDiv) {
 	} else if (fragment.codeType === 'write') {
 		// 如果是写入操作
 		createWriteCodeButton(fragment, codeContainer, actionContainer); // 创建write类型按钮
+	} else {
+		scrollToBottom(); // 没有代码块执行,滚动到消息底部,并且结束对话
 	}
 
 	codeContainer.appendChild(codeBlock); // 将代码块添加到代码容器
@@ -657,7 +631,7 @@ function addMessageToChat(role, content, isError = false) {
 	messagesContainer.appendChild(messageDiv); // 将消息添加到消息容器
 
 	// 滚动到底部
-	scrollToBottom(); // 滚动到消息底部
+	// scrollToBottom(); // 滚动到消息底部
 }
 
 /**
@@ -688,7 +662,7 @@ function addLoadingIndicator() {
 	messagesContainer.appendChild(messageDiv); // 将消息添加到消息容器
 
 	// 滚动到底部
-	scrollToBottom(); // 滚动到消息底部
+	// scrollToBottom(); // 滚动到消息底部
 
 	return loadingId; // 返回加载指示器 ID
 }
@@ -781,7 +755,7 @@ async function continueConversationWithResult(result) {
 			updateStatus('', ''); // 清空状态文本
 
 			// 滚动到底部
-			scrollToBottom(); // 滚动到消息底部
+			// scrollToBottom(); // 滚动到消息底部
 		} catch (error) {
 			// 处理错误
 			handleAIError(error, loadingId, '继续对话失败'); // 统一错误处理
