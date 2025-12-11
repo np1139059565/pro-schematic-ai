@@ -185,7 +185,7 @@ function listPrompts() {
  * @param {Object} params 参数对象 {name: string, arguments: {name: string}}
  * @param {string} params.name 提示名称
  * @param {Object} params.arguments 提示参数对象 {name: string}
- * @param {string} params.arguments.name 提示参数名称
+ * @param {string} params.arguments.name 提示参数名称(不传则返回所有提示)
  * @returns {Object} 返回格式: { description: string, messages: [{ role: string, content: { type: string, text: string } }] }
  */
 async function getPrompt(params) {
@@ -194,20 +194,12 @@ async function getPrompt(params) {
 
 	// 从提示列表中查找提示(如果arguments不为空,则查找arguments.name对应的提示)
 	const prompt = window.jdbPromptList.find(prompt => prompt.name === name);
-	const message = prompt.messages.find(message => _args != null ? message.role === _args.name : true);
+	const messages = prompt.messages.filter(message => _args != null ? message.role === _args.name : true);
 
 	// 返回符合 MCP 规范的格式
 	return {
 		description: prompt.description,
-		messages: [
-			{
-				role: message.role,
-				content: {
-					type: message.content.type,
-					text: message.content.text,
-				},
-			}
-		]
+		messages: messages
 	};
 }
 

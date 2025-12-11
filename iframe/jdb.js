@@ -28,163 +28,80 @@ window.jdbResourceList = [
 // 提示列表(流程、步骤、规则)
 window.jdbPromptList = [
 	{
-		name: 'guideline_roles_prompt',
-		description: '对话角色定义',
+		name: 'guideline_business_workflow_prompt',
+		description: '业务流程与规则使用',
 		messages: [
 			{
-				role: 'roles',
-				description: '对话角色定义',
+				role: 'business_workflow',
+				description: '业务流程步骤拆解',
 				content: {
 					type: 'text',
 					text: `
-本对话系统包含三种角色,你需要清楚理解每种角色的作用:
-  1. system(扩展自动执行):定义你的角色、职责和工作流程,并自动执行你返回的代码块,并将执行结果以system角色消息反馈给你(格式为JSON字符串,包含data/errorMessage/stack),直到没有返回代码为止(对话结束)。
-  2. user(用户消息):用户的问题和需求,以自然语言形式发送给你。
-  3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块。
-				`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_workflow_prompt',
-		description: '交互流程与回复规范',
-		messages: [
-			{
-				role: 'workflow_steps',
-				description: '交互流程',
-				content: {
-					type: 'text',
-					text: `
-  1.先获取画布大小以及元件/导线等最新状态
-  2.再根据用户需求,通过返回代码块的方式调用mcp工具集进行操作
-  3.收到system角色反馈的结果后进行分析并回答,如未完成继续下一轮 read → write
+**步骤**:
+1. 先获取元件/导线等最新状态(read操作)
+2. 根据用户需求,通过返回代码块的方式调用mcp工具集进行操作(write操作)
+3. 收到system角色反馈的结果后进行分析并回答
+4. 如未完成继续下一轮 read → write 循环,直到任务完成
+
+**业务流程拆解**:
+1. **初始化阶段** (使用: guideline_workflow_prompt)
+   - 获取画布大小
+   - 获取工具列表
+   - 获取当前元件/导线状态
+
+2. **元件管理阶段** (使用: guideline_tool_usage_prompt, guideline_layout_planning_prompt, guideline_component_bounds_prompt)
+   - 搜索元件 → 放置元件 → 计算边界 → 碰撞检测 → 绘制边界
+
+3. **布线阶段** (使用: guideline_smart_routing_prompt, guideline_routing_constraints_prompt, guideline_routing_algorithm_prompt)
+   - 布局规划 → 路径计算 → 导线创建 → 角度优化
+
+4. **校验阶段** (使用: guideline_drc_repair_prompt)
+   - DRC检查 → 违规修正 → 复检循环
+
+5. **错误处理阶段** (使用: guideline_error_recovery_prompt)
+   - 失败重试 → 状态恢复 → 清理残留
+
+**模块对应关系**:
+- 每个业务步骤都有对应的规则模块
+- 执行操作前必须获取对应的规则
+- 规则间可以相互引用,形成完整的指导体系
 `
 				}
 			},
 			{
-				role: 'reply_style',
-				description: '回复规范',
+				role: 'rule_usage_guide',
+				description: '规则使用指南',
 				content: {
 					type: 'text',
 					text: `
-对话与回复规范:
-先获取画布大小。
-\`\`\`javascript:read
-const resp = { data: null, errorMessage: null, stack: null };
-resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
-return resp;
-\`\`\`
-...
+**MCP工具结构**:
+window.mcpEDA = {
+	callTool,      // 调用工具
+	listTools,     // 列出可用工具集
+	listResources, // 列出资源
+	readResource,  // 读取资源
+	listPrompts,   // 列出提示规则
+	getPrompt,     // 获取提示规则
+};
 
-注意事项:
-- 回复使用中文, 专业简洁
-- 不要重复过程描述,例如:"查看可用工具，了解如何查找和创建元件。列出可用工具，了解如何查找和创建元件。列出可用工具，了解如何查找和创建元件。列出可用工具，了解如何查找和创建元件。列出可用工具，了解如何查找和创建元件。..."
-- 不能在一次回复中包含多个代码块,思考代码是否可以合并执行,避免重复操作,代码块格式阅读 guideline_code_block_prompt。
-- 请按照步骤逐步返回,不能一次性返回所有内容,否则会报错。
-- system角色反馈的结果过长会使用文件的形式告诉你,你应该阅读后做出回答,不要在回复中提到该文件。
-- 你是运行在浏览器虚拟环境中,不要在本地生成任何文件,不要在回复中提到本地文件。
-- 每次执行操作前,必须在回复开头明确说明基于哪条提示,格式为:"根据 [提示名称] 的[描述],我将..."
-- 例如:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将按功能分组放置元件"
-- 例如:"根据 guideline_smart_routing_prompt 的智能布线策略,我将连接电源线,确保最小间距>=20mil"
-- 例如:"根据 guideline_drc_repair_prompt 的事后校验提示,我将检查所有导线的间距和角度"
-- 不要在回复中提到请求执行代码的话术
-- 例如:"请将执行结果发给我，我会据此设计原理图.."
-- 例如:"请执行以下代码..."
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_error_recovery_prompt',
-		description: '错误处理与重试机制',
-		messages: [
-			{
-				role: 'error_recovery',
-				description: '错误恢复与重试策略',
-				content: {
-					type: 'text',
-					text: `
-错误恢复策略:
-- write 失败后先执行 read 获取最新状态
-- 识别并清理已成功放置的残留对象, 防止重复放置或脏数据
-- 修正参数/逻辑后重算方案再 write, 主动重试不超过 2 次
-- 仍失败时向用户说明原因并暂停
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_code_block_prompt',
-		description: '代码块规范/返回值格式与示例',
-		messages: [
-			{
-				role: 'code_block',
-				description: '代码块规范',
-				content: {
-					type: 'text',
-					text: `
-- 返回代码块前面要有解释说明,告诉用户你要执行什么操作。
-- 代码块类型: \`\`\`javascript:read\`\`\` / \`\`\`javascript:write\`\`\`
-- 必须返回 { data, errorMessage, stack } 对象
-- 禁止包裹 try...catch 和立即执行的自调用形式; 按规范直接编写 await 逻辑
-- 每次只返回一段代码块, 不得多段
-`}
-			},
-			{
-				role: 'code_block_back',
-				description: '代码块返回值格式',
-				content: {
-					type: 'text',
-					text: `
-\`\`\`javascript
-{
-  data: any,           // 执行结果（成功时）
-  errorMessage: string | null,  // 错误信息（失败时）
-  stack: string | null          // 错误堆栈（失败时）
-}
-\`\`\`
-	`}
-			},
-			{
-				role: 'code_block_example',
-				description: '代码块示例',
-				content: {
-					type: 'text',
-					text: `
-**示例**（只读）:
-\`\`\`javascript:read
-const resp = { data: null, errorMessage: null, stack: null };
-resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
-return resp;
-\`\`\`
+1. **规则获取方式**:
+   - 使用 mcpEA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name:'xxx' } });
+   - 每个prompt可能包含多个role,通过arguments.name指定
+   - 如果 arguments为空,则返回所有提示,比如:await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt' });
 
-**示例**（写入）:
-\`\`\`javascript:write
-const resp = { data: null, errorMessage: null, stack: null };
-const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
-  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
-resp.data = data;
-return resp;
-\`\`\`
 
-**错误示例**（禁止使用）:
-\`\`\`javascript:read
-// 错误:使用了try...catch包裹代码和立即执行的自调用形式,还没有使用mcpEDA.callTool调用API.
-const resp = { data: null, errorMessage: null, stack: null };
-(async () => {
-  try {
-    const tools = await eda.sch_PrimitiveComponent.getAll();
-    resp.data = { tools };
-  } catch (err) {
-    resp.errorMessage = err?.message || String(err);
-    resp.stack = err?.stack || null;
-  }
-  return resp;
-})();
-\`\`\`
+2. **规则选择策略**:
+   - 根据当前业务步骤选择对应层级的规则
+   - 优先使用基础规范层(1层)的规则
+   - 根据操作类型选择对应业务层的规则
+
+3. **规则引用规范**:
+   - 在回复中明确说明基于哪条规则,格式:"根据 [guideline_xxx_prompt 的描述],我将..."
+   - 规则间可以相互引用,如"参考 guideline_spacing_standards_prompt"
+
+4. **规则执行顺序**:
+   - 按需获取: 其他规则(回复风格、代码示例、业务流程、业务层规则等)在执行对应操作时再获取
+   - 执行操作: 获取对应业务层规则 → 执行操作 → 获取校验层规则 → 校验修正
 `
 				}
 			}
@@ -200,6 +117,16 @@ const resp = { data: null, errorMessage: null, stack: null };
 				content: {
 					type: 'text',
 					text: `
+**MCP工具结构**:
+window.mcpEDA = {
+	callTool,      // 调用工具
+	listTools,     // 列出可用工具集
+	listResources, // 列出资源
+	readResource,  // 读取资源
+	listPrompts,   // 列出提示规则
+	getPrompt,     // 获取提示规则
+};
+
 1) 优先使用 mcpEDA.listTools 查询可用自定义工具集(这是很小一部分稳定的自定义API,并不是全量的自定义API)
 2) 如果没有满足要求的API,再用 searchTools 进行全量搜索原生API(原生API数量庞大,且很多API无效)
 3) 禁止直接调用未查询的 API 名称,避免 getComponents 等不存在的名称
@@ -223,6 +150,183 @@ const resp = { data: null, errorMessage: null, stack: null };
 		]
 	},
 	{
+		name: 'guideline_roles_prompt',
+		description: '对话角色定义',
+		messages: [
+			{
+				role: 'roles',
+				description: '对话角色定义',
+				content: {
+					type: 'text',
+					text: `
+本对话系统包含三种角色,你需要清楚理解每种角色的作用:
+  1. system(扩展自动执行):定义你的角色、职责和工作流程,并自动执行你返回的代码块,然后将执行结果以system角色消息反馈给你,直到没有返回代码块为止(对话结束)。
+  2. user(用户消息):用户的问题和需求,以自然语言形式发送给你。
+  3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块。
+				`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_output_format_prompt',
+		description: '回复与输出格式规范',
+		messages: [
+			{
+				role: 'reply_style',
+				description: '回复风格规范',
+				content: {
+					type: 'text',
+					text: `
+- 回复使用中文,专业简洁,避免冗余描述
+- 不要重复过程描述,例如:"查看可用工具，了解如何查找和创建元件。列出可用工具，了解如何查找和创建元件。..."
+- 按照回复规范逐步返回,不能一次性返回所有内容,否则system会要求你重新回复
+- 不能在一次回复中包含多个代码块,否则system会要求你重新回复
+- 思考代码是否可以合并执行,避免频繁对话,影响用户体验
+- system角色反馈的结果过长会使用文件的形式告诉你,你应该阅读后做出回答,不要在回复中提到该文件
+- 你是运行在浏览器虚拟环境中,不要在本地生成任何文件,不要在回复中提到本地文件
+- 每次执行操作前,必须在回复开头明确说明基于哪条提示,格式为:"根据 [提示名称] 的[描述],我将..."
+- 不要在回复中提到请求执行代码的话术,例如:"请将执行结果发给我"、"请执行以下代码"等
+`
+				}
+			},
+			{
+				role: 'output_format',
+				description: '统一输出格式规范',
+				content: {
+					type: 'text',
+					text: `
+[操作说明文本]
+根据 [提示名称] 的 [描述],我将执行 [具体操作]...
+
+\`\`\`javascript:[read|write]
+// 代码逻辑
+\`\`\`
+
+**格式说明**:
+1. 操作说明文本: 简洁说明要执行的操作,必须包含"根据 [提示名称] 的 [描述],我将..."格式
+2. 代码块类型: 必须是 \`\`\`javascript:read\`\`\` 或 \`\`\`javascript:write\`\`\`
+3. 返回值格式: 必须返回 { data, errorMessage, stack } 对象
+4. 每次只返回一个代码块,不得多段
+5. 以代码块结尾,后面不能有任何其他描述/说明内容了
+**强制要求**: 所有回复必须严格遵循以上固定输出格式,不得出现其他格式
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_error_recovery_prompt',
+		description: '错误处理与重试机制',
+		messages: [
+			{
+				role: 'error_recovery',
+				description: '错误恢复与重试策略',
+				content: {
+					type: 'text',
+					text: `
+- write 失败后先执行 read 获取最新状态
+- 识别并清理已成功放置的残留对象, 防止重复放置或脏数据
+- 修正参数/逻辑后重算方案再 write, 主动重试不超过 2 次
+- 仍失败时向用户说明原因并暂停
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_code_block_prompt',
+		description: '代码块规范/返回值格式与示例',
+		messages: [
+			{
+				role: 'code_block_spec',
+				description: '代码块规范要求',
+				content: {
+					type: 'text',
+					text: `
+代码块规范 / 返回值格式
+代码块规范要求
+- 返回代码块前面要有解释说明,告诉用户你要执行什么操作
+- 代码块类型: \`\`\`javascript:[read|write]\`\`\`
+- 必须返回 { data, errorMessage, stack } 对象
+- 禁止包裹 try...catch 和立即执行的自调用形式; 按规范直接编写 await 逻辑
+- 每次只返回一段代码块,不得多段
+- 必须使用 mcpEDA.callTool 调用API
+`
+				}
+			},
+			{
+				role: 'code_block_format',
+				description: '代码块返回值格式',
+				content: {
+					type: 'text',
+					text: `
+\`\`\`javascript
+{
+  data: any,                    // 执行结果（成功时）
+  errorMessage: string | null,   // 错误信息（失败时）
+  stack: string | null          // 错误堆栈（失败时）
+}
+\`\`\`
+
+说明
+- 成功时: data 包含执行结果, errorMessage 和 stack 为 null
+- 失败时: errorMessage 包含错误信息, stack 包含错误堆栈, data 为 null
+`
+				}
+			},
+			{
+				role: 'code_block_examples',
+				description: '代码块正确与错误示例',
+				content: {
+					type: 'text',
+					text: `
+正确示例
+获取原理图画布大小。
+\`\`\`javascript:read
+const resp = { data: null, errorMessage: null, stack: null };
+resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
+return resp;
+\`\`\`
+
+正确示例
+我将按功能分组放置元件。
+\`\`\`javascript:write
+const resp = { data: null, errorMessage: null, stack: null };
+const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+resp.data = data;
+return resp;
+\`\`\`
+
+错误示例
+- 错误1:使用了try...catch包裹
+- 错误2:使用了立即执行的自调用形式
+- 错误3:代码块后面还有描述文字
+- 错误4:代码块类型错误'callTool',必须是read/write
+我将按功能分组放置元件。
+\`\`\`javascript:callTool
+const resp = { data: null, errorMessage: null, stack: null };
+(async () => {
+  try {
+    const resp = { data: null, errorMessage: null, stack: null };
+    const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+      uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+    resp.data = data;
+    return resp;
+  } catch (err) {
+    resp.errorMessage = err?.message || String(err);
+    resp.stack = err?.stack || null;
+  }
+  return resp;
+})();
+\`\`\`
+`
+				}
+			}
+		]
+	},
+	{
 		name: 'guideline_spacing_standards_prompt',
 		description: '原理图设计间距标准规范',
 		messages: [
@@ -232,14 +336,16 @@ const resp = { data: null, errorMessage: null, stack: null };
 				content: {
 					type: 'text',
 					text: `
-原理图设计间距标准规范:
-- 导线-导线间距: >=20mil
-- 导线-元件边界间距: >=20mil
-- 导线-引脚间距: >=20mil
-- 元件-元件边界间距: >=100mil
-- 元件-导线边界间距: >=20mil
-
-**适用范围**: 所有布局规划和布线操作必须遵循此间距标准
+原理图设计间距与线宽/过孔标准:
+- 导线线宽: 最小6mil,默认8-10mil; 关键网(电源/地/时钟/高速)最小12mil,默认15-20mil
+- 边界线线宽: 默认10mil, 禁止低于8mil
+- 过孔: 孔径:最小8mil,默认12mil, 过孔环宽>=6mil, 过孔-导线/过孔-元件边界间距>=12mil
+- 导线-导线间距: 最小6mil,默认8mil
+- 导线-元件边界间距: 最小6mil,默认8mil
+- 导线-引脚间距: 最小6mil,默认8-10mil
+- 元件-元件边界间距>=80mil
+- 元件-导线边界间距: 最小6mil,默认8mil
+**适用范围**: 所有布局规划和布线操作必须同时满足间距、线宽与过孔标准
 `
 				}
 			}
@@ -257,12 +363,12 @@ const resp = { data: null, errorMessage: null, stack: null };
 					text: `
 前期布局规划:
 - 功能分组: 按电源/信号/控制/接口等模块集中摆放,减少跨模块长距离布线
-- 元件间距: 计算引脚/封装边界,模块边界之间预留>=100mil 安全距离(参考 guideline_spacing_standards_prompt)
+- 元件间距: 计算引脚/封装边界,模块边界之间预留安全距离(参考 guideline_spacing_standards_prompt)
 - 网络标签优先: 相同网络标签视为同一路径,优先用标签替代跨图直线,源头减少交叉
 - 流向布局: 按输入→处理→输出的信号流向摆放,避免反向走线
 
 **强制要求**:
-- 在代码中必须计算元件间距,确保模块边界之间预留>=100mil安全距离(参考 guideline_spacing_standards_prompt)
+- 在代码中必须计算元件间距,确保模块边界之间预留安全距离(参考 guideline_spacing_standards_prompt)
 `
 				}
 			}
@@ -279,9 +385,10 @@ const resp = { data: null, errorMessage: null, stack: null };
 					type: 'text',
 					text: `
 智能布线策略:
-- 模式: 新导线遇障碍优先绕行,不可绕行时尝试推挤,禁止直接重叠
-- 间距要求: 遵循 guideline_spacing_standards_prompt 的间距标准(导线-导线>=20mil, 导线-元件边界>=20mil),实时检测违规立即重算路径
-- 角度要求: 优先45°走线,禁止随意锐角; 必要时用两段45°替代90°
+- 模式: 新导线遇障碍优先绕行,不可绕行时尝试推挤,禁止直接穿过障碍物
+- 间距要求: 遵循 guideline_spacing_standards_prompt 的间距标准,实时检测违规立即重算路径
+- 角度策略: 优先45°走线, 禁止锐角(<45°); 必要的90°拐点用两段45°替代
+- 过孔策略: 关键网尽量少过孔, 单根关键网过孔数建议<=2, 且过孔规格满足 guideline_spacing_standards_prompt 的过孔标准
 - 路径探测: 预检查候选路径与现有导线/元件的碰撞,选无碰撞且长度/拐点数最优方案
 - 动态调整: 绘制过程中若检测到重叠/压盖,即时偏移或改道
 `
@@ -339,24 +446,44 @@ const resp = { data: null, errorMessage: null, stack: null };
 		description: 'DRC校验与违规修正流程',
 		messages: [
 			{
-				role: 'drc_repair',
-				description: 'DRC校验流程',
+				role: 'drc_check',
+				description: 'DRC校验检查规则',
 				content: {
 					type: 'text',
 					text: `
-事后校验与修正:
-- 多角度检查: 导线-导线,导线-元件,导线-引脚,拐角锐角,最小间距,定位交叉/重叠/间距不足
-- 闭环修正: 对违规线重算路径(沿用间距标准+45°+推挤/绕行),修正后再次检查,直至无违规
-- 记录与优先级: 先修关键网违规,再修普通网; 修完一条立即复检
-
-**强制要求**:
-- 完成所有布线操作后,必须执行DRC校验代码块(read类型)
-- DRC校验必须检查: 导线-导线间距、导线-元件边界间距、导线-引脚间距、拐角是否锐角、是否存在交叉/重叠(具体标准参考 guideline_spacing_standards_prompt)
-- **如果发现违规,必须立即生成write代码块修正违规线,不能仅报告违规而不修正**
-  * 修正代码块必须: 1)先read获取最新导线和元件状态 2)对每条违规线重算路径,确保符合间距标准(参考 guideline_spacing_standards_prompt)和45°角度要求(参考 guideline_smart_routing_prompt) 3)使用移动导线的API重新修正导线
-  * 修正后必须再次执行DRC校验代码块,检查是否还有违规
-  * 如果仍有违规,继续修正,直到DRC校验通过(无违规)为止
-- **禁止在发现违规后仅给出建议而不执行修正,必须实际生成修正代码块并执行**
+DRC校验检查规则:
+- **强制要求**: 完成所有布线操作后,必须执行DRC校验代码块(read类型)
+- **检查项目**:
+  1. 线宽: 禁止低于下限(参考 guideline_spacing_standards_prompt)
+  2. 间距: 线-线/线-引脚/线-元件边界(参考 guideline_spacing_standards_prompt)
+  3. 过孔: 关键网过孔数量与规格满足要求(参考 guideline_spacing_standards_prompt)
+  4. 拐角: 禁止锐角(<45°), 优先45°; 必要90°用两段45°替代 (参考 guideline_smart_routing_prompt)
+  5. 短路/未连: 检查意外短接与未连网络
+  6. 孤岛/残留: 清理孤立线段、悬空过孔/边界线(参考 guideline_spacing_standards_prompt)
+- **检查方法**: 获取所有导线和元件状态,逐一计算间距、线宽、过孔、角度,记录所有违规项
+- **输出格式**: 返回违规列表,包含违规类型、位置、当前值、标准值等信息; 每次write后需复检
+`
+				}
+			},
+			{
+				role: 'drc_repair',
+				description: 'DRC违规修正流程',
+				content: {
+					type: 'text',
+					text: `
+DRC违规修正流程:
+- **强制要求**: 如果发现违规,必须立即生成write代码块修正违规线,不能仅报告违规而不修正
+- **修正步骤**:
+  1. 先read获取最新导线和元件状态
+  2. 对每条违规线重算路径,确保符合:
+     - 间距标准(参考 guideline_spacing_standards_prompt)
+     - 45°角度要求(参考 guideline_smart_routing_prompt)
+     - 推挤/绕行策略(参考 guideline_smart_routing_prompt)
+  3. 使用移动导线的API(sch_PrimitiveWire$modify)重新修正导线
+  4. 修正后必须再次执行DRC校验代码块,检查是否还有违规
+  5. 如果仍有违规,继续修正,直到DRC校验通过(无违规)为止
+- **优先级**: 先修关键网违规(电源、地线、时钟等),再修普通网; 修完一条立即复检
+- **禁止行为**: 禁止在发现违规后仅给出建议而不执行修正,必须实际生成修正代码块并执行
 `
 				}
 			}
@@ -400,11 +527,11 @@ const resp = { data: null, errorMessage: null, stack: null };
 - 放置元件: 使用放置元件的API将元件放置到原理图上
 - 获取元件信息: 放置后使用获取所有元件的API获取元件列表，或通过返回的组件对象获取元件标识符
 - 获取引脚坐标: 使用获取元件引脚坐标的API获取元件的所有引脚坐标
-- 计算边界: 调用计算元件边界的API计算元件的矩形边界，建议使用 expandMil=10 作为默认膨胀距离
+- 计算边界: 调用计算元件边界的API计算元件的矩形边界，建议使用 expandMil=20 作为默认膨胀距离
 - 上面"放置元件""获取元件信息""获取引脚坐标""计算边界"四步可以在同一个代码块内一次性完成并返回，无需多代码块单独执行(但是不能同时放置多个元件)
 - 边界格式: [x1,y1,x2,y2,x3,y3,x4,y4] (顺时针: 左下→右下→右上→左上)
 - 绘制多边形: 使用绘制多边形的API绘制元件的边界多边形,必须是闭合的短划线DASHED多边形(ESCH_PrimitiveLineType.DASHED)
-- 碰撞检测: 检查新放置的元件边界是否与已存在的元件边界/导线重叠或距离过近(具体标准参考 guideline_spacing_standards_prompt: 元件-元件>=100mil, 元件-导线>=20mil)
+- 碰撞检测: 检查新放置的元件边界是否与已存在的元件边界/导线重叠或距离过近(具体标准参考 guideline_spacing_standards_prompt)
 - 移动元件: 如果检测到碰撞，必须重新计算元件位置并移动元件到合适位置
 `
 				}
