@@ -554,7 +554,7 @@ body {
 	font-size: 12px;
 	line-height: 1.5;
 	white-space: pre-wrap;
-	max-height: 300px;
+	max-height: 100px;
 	overflow-y: auto;
 	border-left: 3px solid #667eea;
 }

@@ -167,24 +167,34 @@ async function readResource(params) {
  */
 function listPrompts() {
 	// 包装为符合 MCP 规范的返回格式
-	return { prompts: window.jdbPromptList };
+	return {
+		prompts: window.jdbPromptList.map(p => ({
+			name: p.name,
+			description: p.description,
+			arguments: p.messages.map(m => ({
+				name: m.role,
+				"description": m.description,
+				"required": true
+			}))
+		}))
+	};
 }
 
 /**
  * 获取提示 (符合 MCP 规范)
  * @param {Object} params 参数对象 {name: string, arguments: {name: string}}
  * @param {string} params.name 提示名称
- * @param {string} params.arguments.name 提示参数名称
  * @param {Object} params.arguments 提示参数对象 {name: string}
+ * @param {string} params.arguments.name 提示参数名称
  * @returns {Object} 返回格式: { description: string, messages: [{ role: string, content: { type: string, text: string } }] }
  */
 async function getPrompt(params) {
 	// 从参数对象中提取 name 和 arguments
 	const { name, arguments: _args } = params;
 
-	// 从提示列表中查找提示
+	// 从提示列表中查找提示(如果arguments不为空,则查找arguments.name对应的提示)
 	const prompt = window.jdbPromptList.find(prompt => prompt.name === name);
-	const message = prompt.messages.find(message => message.role === _args.name);
+	const message = prompt.messages.find(message => _args != null ? message.role === _args.name : true);
 
 	// 返回符合 MCP 规范的格式
 	return {
@@ -465,6 +475,42 @@ async function sch_PrimitiveWire$modify({ primitiveId, property }) {
 	return { content: wire };
 }
 
+// 创建原理图多边形（确保坐标数组有效）
+async function sch_PrimitivePolygon$create({ line, color = null, fillColor = null, lineWidth = null, lineType = null }) {
+	// line 必须为长度不少于6且为偶数的坐标数组（至少三点且必须闭合）
+	if (!Array.isArray(line) || line.length < 6 || line.length % 2 !== 0 || `${line[0]}${line[1]}` !== `${line[line.length - 2]}${line[line.length - 1]}`) {
+		throw new Error('line 必须是长度不少于6且为偶数的坐标数组，至少包含三点且必须闭合');
+	}
+	// color 可为字符串或 null，不允许 undefined
+	if (color === undefined) {
+		throw new Error('color 若不传请设为 null，不能为 undefined');
+	}
+	// 调用原生 API 创建多边形
+	const polygon = await eda.sch_PrimitivePolygon.create(line, color, fillColor, lineWidth, lineType);
+	// 返回统一的 content 包装
+	return { content: polygon };
+}
+
+// 删除原理图多边形
+async function sch_PrimitivePolygon$delete({ primitiveIds }) {
+	// primitiveIds 必填，可为单个 ID 或 ID 数组
+	if (!primitiveIds) {
+		throw new Error('primitiveIds 必填');
+	}
+	// 调用原生 API 删除多边形
+	const result = await eda.sch_PrimitivePolygon.delete(primitiveIds);
+	// 返回统一的 content 包装
+	return { content: result };
+}
+
+// 获取全部原理图多边形
+async function sch_PrimitivePolygon$getAll() {
+	// 调用原生 API 获取全部多边形
+	const result = await eda.sch_PrimitivePolygon.getAll();
+	// 返回统一的 content 包装
+	return { content: result };
+}
+
 /**
  * 获取文档封装源码
  */
@@ -541,6 +587,10 @@ window.customeTools = {
 	'sch_PrimitiveWire$modify': sch_PrimitiveWire$modify,
 	'sch_PrimitiveWire$delete': sch_PrimitiveWire$delete,
 	'sch_PrimitiveWire$getAll': sch_PrimitiveWire$getAll,
+
+	'sch_PrimitivePolygon$create': sch_PrimitivePolygon$create,
+	'sch_PrimitivePolygon$delete': sch_PrimitivePolygon$delete,
+	'sch_PrimitivePolygon$getAll': sch_PrimitivePolygon$getAll,
 
 	'sys_FileManager$getDocumentFootprintSources': sys_FileManager$getDocumentFootprintSources,
 	toolList: [
@@ -697,7 +747,12 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveWire$create',
-			description: '创建原理图导线；line 必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4]；使用前必须查看 guideline_smart_routing_prompt 和 guideline_routing_constraints_prompt 了解智能布线和约束规则，确保最小间距和45°走线优先；布线完成后必须查看 guideline_drc_repair_prompt 进行DRC校验',
+			description: `
+创建原理图导线；line 必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4]；
+默认线宽为2;
+使用前必须查看 guideline_smart_routing_prompt 和 guideline_routing_constraints_prompt 了解智能布线和约束规则，确保最小间距和45°走线优先；
+布线完成后必须查看 guideline_drc_repair_prompt 进行DRC校验;
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -771,6 +826,62 @@ window.customeTools = {
 						description: '网络名称，可选，用于筛选特定网络的导线'
 					}
 				},
+				required: []
+			},
+		},
+		{
+			name: 'sch_PrimitivePolygon$create',
+			description: `
+			创建多边形,用于绘制元件的边界(闭合的短划线DASHED多边形(ESCH_PrimitiveLineType.DASHED)；
+			line 为连续坐标数组（长度为偶数且不少于6，至少三点）；fillColor null 表示无填充;
+			lineType必须是ESCH_PrimitiveLineType.xxx这种格式,禁止添加引号;
+			使用示例:
+const polygon = await mcpEDA.callTool({
+  name: 'sch_PrimitivePolygon$create',
+  arguments: {
+    line,
+    color: '#FFA500',
+    fillColor: null,
+    lineWidth: 2,
+    lineType: ESCH_PrimitiveLineType.DASHED
+  }
+});
+			`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					line: { type: 'array', items: { type: 'number' } },
+					color: { type: ['string', 'null'] },
+					fillColor: { type: ['string', 'null'] },
+					lineWidth: { type: ['number', 'null'] },
+					lineType: { type: ['ESCH_PrimitiveLineType', 'null'], enum: ['ESCH_PrimitiveLineType.DASHED', 'ESCH_PrimitiveLineType.DOT_DASHED', 'ESCH_PrimitiveLineType.DOTTED', 'ESCH_PrimitiveLineType.SOLID'] }
+				},
+				required: ['line']
+			},
+		},
+		{
+			name: 'sch_PrimitivePolygon$delete',
+			description: '删除多边形；primitiveIds 可以是单个 ID 或 ID 数组',
+			inputSchema: {
+				type: 'object',
+				properties: {
+					primitiveIds: {
+						oneOf: [
+							{ type: 'string' },
+							{ type: 'array', items: { type: 'string' } }
+						],
+						description: '多边形的图元 ID 或多边形图元对象，可以是单个ID或ID数组'
+					}
+				},
+				required: ['primitiveIds']
+			},
+		},
+		{
+			name: 'sch_PrimitivePolygon$getAll',
+			description: '获取全部多边形；无参数',
+			inputSchema: {
+				type: 'object',
+				properties: {},
 				required: []
 			},
 		},

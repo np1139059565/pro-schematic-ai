@@ -17,6 +17,8 @@ let configSaveBtn; // 配置保存按钮
 let configCancelBtn; // 配置取消按钮
 let arkApiKeyInput; // ARK API Key 输入框
 let arkModelInput; // ARK Model 输入框
+let autoExecWriteCheckbox; // 自动执行复选框
+let autoExecWriteEnabled = false; // 自动执行开关（默认关闭）
 
 // 对话历史数组,用于维护上下文
 let conversationHistory = []; // 存储所有对话消息,格式: [{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
@@ -26,82 +28,118 @@ const MAX_HISTORY_MESSAGES = 30; // 最大保留的历史消息数量（用户�
 
 let isStop = false; // 是否停止
 
+// 界面状态枚举
+const UI_STATE = {
+	IDLE: 'idle',           // 空闲状态
+	SENDING: 'sending',     // 发送中
+	STOPPED: 'stopped',     // 已停止
+	EXECUTING: 'executing'  // 代码执行中
+};
+
+let currentUIState = UI_STATE.IDLE; // 当前界面状态
+
+/**
+ * 统一更新界面状态
+ * @param {string} state - 目标状态 (UI_STATE.IDLE | UI_STATE.SENDING | UI_STATE.STOPPED | UI_STATE.EXECUTING)
+ */
+function updateUIState(state) {
+	currentUIState = state; // 更新当前状态
+	
+	switch (state) {
+		case UI_STATE.IDLE:
+			// 空闲状态：可发送消息、可清空、可配置、停止按钮隐藏
+			setInputDisabled(false); // 启用输入框和发送按钮
+			stopBtn.style.display = 'none'; // 隐藏停止按钮
+			clearBtn.disabled = false; // 启用清空按钮
+			autoExecWriteCheckbox.disabled = false; // 启用自动执行复选框
+			configBtn.disabled = false; // 启用配置按钮
+			break;
+			
+		case UI_STATE.SENDING:
+			// 发送中：禁用输入/发送/清空、允许配置、显示停止
+			setInputDisabled(true); // 禁用输入框和发送按钮
+			stopBtn.style.display = 'block'; // 显示停止按钮
+			clearBtn.disabled = true; // 禁用清空按钮
+			autoExecWriteCheckbox.disabled = false; // 允许自动执行复选框（但停止后会被禁用）
+			configBtn.disabled = false; // 允许配置
+			break;
+			
+		case UI_STATE.STOPPED:
+			// 停止中：禁用输入/发送/清空/自动执行复选框、隐藏停止按钮、取消自动执行选中状态
+			setInputDisabled(true); // 禁用输入框和发送按钮
+			stopBtn.style.display = 'none'; // 隐藏停止按钮
+			clearBtn.disabled = true; // 禁用清空按钮
+			autoExecWriteCheckbox.disabled = true; // 禁用自动执行复选框
+			autoExecWriteEnabled = false; // 取消自动执行
+			autoExecWriteCheckbox.checked = false; // 取消自动执行选中状态
+			configBtn.disabled = false; // 允许配置
+			break;
+			
+		case UI_STATE.EXECUTING:
+			// 代码执行中：禁用输入/发送/清空、允许配置、显示停止
+			setInputDisabled(true); // 禁用输入框和发送按钮
+			stopBtn.style.display = 'block'; // 显示停止按钮
+			clearBtn.disabled = true; // 禁用清空按钮
+			autoExecWriteCheckbox.disabled = false; // 允许自动执行复选框
+			configBtn.disabled = false; // 允许配置
+			break;
+	}
+}
+
+/**
+ * 获取当前界面状态
+ * @returns {string} 当前状态
+ */
+function getUIState() {
+	return currentUIState;
+}
+
 // 系统消息 - 用于描述 AI 角色和职责,用户可以在控制台临时修改系统消息,对ai助手进行定制化
 window.top.systemMessage = `
-你是原理图设计AI助手,运行在嘉立创在线web开发平台的iframe扩展中,专注电子电路原理图设计。
+你是原理图设计AI助手,运行在嘉立创在线web开发平台的iframe扩展中,通过mcp工具专注于电子电路原理图设计,你必须清楚的知道:
+mcp工具被封装在浏览器全局变量中,你必须通过返回代码块方式来调用,不能以任何其他形式调用,否则会报错,请先返回下面代码块获取提示后再按照提示回答。
 
-对话角色:
-本对话系统包含三种角色,你需要清楚理解每种角色的作用:
-1. system(扩展自动执行):定义你的角色、职责和工作流程,还会自动执行你返回的代码块,并将执行结果以system角色消息反馈给你(格式为JSON字符串,包含data/errorMessage/stack,如果内容太长会以文件的形式传给你,请自行解析),直到没有返回代码为止(对话结束)
-2. user(用户消息):用户的问题和需求,以自然语言形式发送给你
-3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块（使用\`\`\`javascript:read或\`\`\`javascript:write格式）
-
-
-工作流程:
-1.收到user的消息后,先通过代码块查看mcp工具的提示,根据提示中的工作流程来执行,先查看mcp工具的提示 guideline_workflow_prompt。
-2.如果你打算执行某个操作,请先通过代码块查看mcp工具的提示,根据提示中的工作流程来执行。
-3.必须明确告诉用户,你的操作是基于mcp的哪条提示来执行的,格式为:"根据 [提示名称] 的[描述],我将..."。例如:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将按功能分组放置元件"。
-4.执行布线操作时,必须遵循 guideline_smart_routing_prompt 和 guideline_routing_constraints_prompt 的要求,在代码中实现最小间距检查、45°走线优先、碰撞检测等。
-5.完成布线后,必须根据 guideline_drc_repair_prompt 进行DRC校验,检查导线-导线、导线-元件、导线-引脚、拐角锐角、最小间距等违规情况,并修正违规线。
-
-回复要求:
-- 使用中文,专业准确,结合实际原理图信息,提供可操作建议
-- 回复简洁明了,避免重复相同内容和冗余说明
-- 代码执行是自动的,无需在回复中重复说明"系统会执行代码"等
-- 直接给出结果和结论,无需重复过程描述
-
-
-代码块规范:
-- 返回代码块前面要有解释说明,告诉用户你要执行什么操作。
-- 代码块类型: \`\`\`javascript:read\`\`\` / \`\`\`javascript:write\`\`\`
-- 必须返回 { data, errorMessage, stack } 对象
-- 禁止包裹 try...catch 和立即执行的自调用形式; 按规范直接编写 await 逻辑
-- 每次只返回一段代码块, 不得多段
-
-**返回值格式**（必须）:
-\`\`\`javascript
-{
-  data: any,           // 执行结果（成功时）
-  errorMessage: string | null,  // 错误信息（失败时）
-  stack: string | null          // 错误堆栈（失败时）
-}
+\`\`\`javascript:read
+const resp = { data: null, errorMessage: null, stack: null };
+const roles = await mcpEDA.getPrompt({ name: 'guideline_roles_prompt', arguments: { name:'roles' } });
+const workflow = await mcpEDA.getPrompt({ name: 'guideline_workflow_prompt', arguments: { name:'workflow_steps' } });
+const replyStyle = await mcpEDA.getPrompt({ name: 'guideline_workflow_prompt', arguments: { name:'reply_style' } });
+const errorRecovery = await mcpEDA.getPrompt({ name: 'guideline_error_recovery_prompt', arguments: { name:'error_recovery' } });
+const codeBlock = await mcpEDA.getPrompt({ name: 'guideline_code_block_prompt', arguments: { name:'code_block' } });
+const codeBlockExample = await mcpEDA.getPrompt({ name: 'guideline_code_block_prompt', arguments: { name:'code_block_example' } });
+const codeBlockBack = await mcpEDA.getPrompt({ name: 'guideline_code_block_prompt', arguments: { name:'code_block_back' } });
+resp.data = { roles, workflow, replyStyle, errorRecovery, codeBlock, codeBlockExample, codeBlockBack };
+return resp;
 \`\`\`
 
-**示例**（只读）:
+mcp工具结构如下:
+window.mcpEDA = {
+	callTool,
+	listTools,
+	listResources,
+	readResource,
+	listPrompts,
+	getPrompt,
+};
+
+对话与回复规范1:
+先获取画布大小。
 \`\`\`javascript:read
 const resp = { data: null, errorMessage: null, stack: null };
 resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
 return resp;
 \`\`\`
 
-**示例**（写入）:
+对话与回复规范2:
+我将放置一个元件。
 \`\`\`javascript:write
 const resp = { data: null, errorMessage: null, stack: null };
-const component = await eda.sch_PrimitiveComponent.create(/* 参数 */);
-resp.data = { success: true, component };
+const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+resp.data = data;
 return resp;
 \`\`\`
 
-**错误示例**（禁止使用）:
-\`\`\`javascript:read
-// 错误:使用了try...catch包裹代码和立即执行的自调用形式,还没有使用mcpEDA.callTool调用API.
-const resp = { data: null, errorMessage: null, stack: null };
-(async () => {
-  try {
-    const tools = await eda.sch_PrimitiveComponent.getAll();
-    resp.data = { tools };
-  } catch (err) {
-    resp.errorMessage = err?.message || String(err);
-    resp.stack = err?.stack || null;
-  }
-  return resp;
-})();
-\`\`\`
-
-更多细则请通过资源/提示获取:
-- 资源: mcpEDA.listResources / mcpEDA.readResource
-- 提示: mcpEDA.listPrompts / mcpEDA.getPrompt
-- 工具使用说明: mcpEDA.listTools
 `;
 // 初始化函数
 function init() {
@@ -119,6 +157,7 @@ function init() {
 	configCancelBtn = document.getElementById('configCancelBtn');
 	arkApiKeyInput = document.getElementById('arkApiKeyInput');
 	arkModelInput = document.getElementById('arkModelInput');
+	autoExecWriteCheckbox = document.getElementById('autoExecWriteCheckbox'); // 获取自动执行复选框
 
 	// 绑定事件监听器
 	sendBtn.addEventListener('click', handleSendMessage); // 发送按钮点击事件
@@ -130,6 +169,11 @@ function init() {
 	configCancelBtn.addEventListener('click', handleCloseConfig); // 配置取消按钮点击事件
 	// 点击遮罩层关闭对话框
 	configDialog.querySelector('.config-overlay').addEventListener('click', handleCloseConfig); // 遮罩层点击事件
+	// 写入自动执行开关事件
+	autoExecWriteCheckbox.addEventListener('change', () => {
+		autoExecWriteEnabled = autoExecWriteCheckbox.checked; // 更新写入自动执行开关状态
+	}); // 复选框切换事件
+	autoExecWriteCheckbox.checked = autoExecWriteEnabled; // 初始化复选框状态为默认关闭
 	// 输入框事件
 	messageInput.addEventListener('keydown', (e) => {
 		// 按 Enter 发送（Shift+Enter 换行）
@@ -149,6 +193,7 @@ function init() {
 	loadConfig(); // 从 localStorage 加载配置
 
 	// 设置初始状态
+	updateUIState(UI_STATE.IDLE); // 初始化界面状态
 	updateStatus('', ''); // 清空状态文本
 }
 
@@ -224,7 +269,7 @@ function parseAIResponse(response) {
 async function callAIAndHandleResponse(loadingId) {
 	// 如果停止状态为true,直接返回
 	if (isStop) {
-		switchStop();
+		resumeStop();
 		return; // 直接返回
 	}
 
@@ -332,7 +377,7 @@ function createReadCodeButton(fragment, codeContainer, actionContainer) {
 	// 自动执行（延迟一点,让界面先渲染）
 	setTimeout(() => {
 		executeBtn.click(); // 自动点击执行按钮
-	}, 100); // 延迟 100 毫秒
+	}, 5000); // 延迟 5 秒
 }
 
 /**
@@ -348,23 +393,36 @@ function createWriteCodeButton(fragment, codeContainer, actionContainer) {
 	confirmBtn.textContent = '确认执行'; // 设置按钮文本
 	confirmBtn.onclick = async () => {
 		// 点击事件
-		const confirmed = confirm('确定要执行此代码吗？此操作可能会修改原理图.'); // 显示确认对话框
-		if (!confirmed) {
-			// 如果用户取消
-			return; // 直接返回
-		}
-
+		// if (!autoExecWriteEnabled) {
+		// 	// 如果未开启自动执行
+		// 	const confirmed = confirm('确定要执行此代码吗？此操作可能会修改原理图.'); // 显示确认对话框
+		// 	if (!confirmed) {
+		// 		// 如果用户取消
+		// 		return; // 直接返回
+		// 	}
+		// }
 		await executeCodeAndContinue(fragment.content, codeContainer, confirmBtn); // 执行代码并继续对话
 	}; // 设置点击事件
 
 	actionContainer.appendChild(confirmBtn); // 将确认按钮添加到操作容器
 	scrollToBottom(); // 有代码块执行,所以滚动到消息底部
 
+	// 如果开启自动执行,5 秒后自动触发执行
+	if (autoExecWriteEnabled) {
+		setTimeout(() => {
+			// 延迟执行
+			if (!confirmBtn.disabled) {
+				// 未被禁用才执行
+				confirmBtn.click(); // 自动点击执行
+			}
+		}, 5000); // 5 秒延迟
+	}
+
 }
 
 
 /**
- * 处理发送消息
+ * 处理发送消息按钮点击事件
  */
 async function handleSendMessage() {
 	let loadingId = null;
@@ -376,14 +434,8 @@ async function handleSendMessage() {
 			return; // 如果消息为空,直接返回
 		}
 
-		// 重置停止状态
-		isStop = false; // 重置停止状态为 false
-
-		// 显示停止按钮
-		stopBtn.style.display = 'block'; // 显示停止按钮
-
-		// 禁用输入和发送按钮
-		setInputDisabled(true); // 禁用输入框
+		// 更新为发送中状态
+		updateUIState(UI_STATE.SENDING); // 更新界面状态
 		updateStatus('正在发送...', 'info'); // 更新状态为"正在发送"
 
 		// 处理用户消息的UI操作
@@ -407,11 +459,8 @@ async function handleSendMessage() {
 		// 处理错误
 		handleAIError(error, loadingId, 'AI 请求失败'); // 统一错误处理
 	} finally {
-		// 隐藏停止按钮
-		stopBtn.style.display = 'none'; // 隐藏停止按钮
-
-		// 恢复输入和发送按钮
-		setInputDisabled(false); // 恢复输入框
+		// 恢复为空闲状态
+		updateUIState(UI_STATE.IDLE); // 恢复界面状态
 		messageInput.focus(); // 聚焦到输入框
 	}
 }
@@ -420,31 +469,30 @@ async function handleSendMessage() {
 /**
  * 处理停止按钮点击事件
  */
-
 function handleStop() {
 	isStop = true; // 设置为停止状态
-	// 隐藏停止按钮
-	stopBtn.style.display = 'none'; // 隐藏停止按钮
+	updateUIState(UI_STATE.STOPPED); // 更新为停止状态
 }
 
 /**
- * 切换停止状态
+ * 恢复停止状态
  */
-function switchStop() {
-	// 移除加载指示器
-	removeLoadingIndicator(loadingId); // 移除加载动画
-
-	// 恢复输入和发送按钮
-	setInputDisabled(false); // 恢复输入框
+function resumeStop() {
+	isStop = false; // 重置停止状态
+	updateUIState(UI_STATE.IDLE); // 恢复为空闲状态
 	messageInput.focus(); // 聚焦到输入框
-
-	// 更新状态
-	// updateStatus('已停止生成', 'info'); // 更新状态为已停止
-	// setTimeout(() => {
-	// 	// 延迟清空状态
-	// 	updateStatus('', ''); // 清空状态文本
-	// }, 2000); // 2 秒后清空
 }
+
+/**
+ * 设置输入框状态
+ * @param disabled - 是否禁用
+ */
+function setInputDisabled(disabled) {
+	messageInput.disabled = disabled; // 设置输入框状态
+	sendBtn.disabled = disabled; // 设置发送按钮状态
+
+}
+
 /**
  * 解析消息内容,提取代码块
  * @param content - 消息内容
@@ -586,6 +634,11 @@ function createCodeFragment(fragment, contentDiv) {
 		scrollToBottom(); // 没有代码块执行,滚动到消息底部,并且结束对话
 	}
 
+	// 自动执行总是滚动到消息底部
+	if (autoExecWriteEnabled) {
+		scrollToBottom(); // 滚动到消息底部
+	}
+
 	codeContainer.appendChild(codeBlock); // 将代码块添加到代码容器
 	codeContainer.appendChild(actionContainer); // 将操作容器添加到代码容器
 	contentDiv.appendChild(codeContainer); // 将代码容器添加到内容容器
@@ -598,6 +651,11 @@ function createCodeFragment(fragment, contentDiv) {
  * @param isError - 是否为错误消息
  */
 function addMessageToChat(role, content, isError = false) {
+	// 如果停止状态为true,直接返回
+	if (isStop) {
+		resumeStop();
+		return; // 直接返回
+	}
 	// 创建消息元素
 	const messageDiv = document.createElement('div'); // 创建消息容器
 	messageDiv.className = `message ${role}`; // 设置消息类名
@@ -614,7 +672,14 @@ function addMessageToChat(role, content, isError = false) {
 
 	// 解析消息内容（提取代码块）
 	const fragments = parseMessageContent(content); // 解析内容
-
+	const codeFragments = fragments.filter((fragment) => fragment.type === 'code'); // 统计代码片段
+	if (codeFragments.length > 1) { // 多于一个代码块则视为异常
+		console.error('检测到多个代码块，已中止渲染'); // 记录错误日志
+		const error = new Error('❌ 错误:每次回答只能返回单个代码块,请重新回答');
+		addMessageToChat('assistant', error.message, true); // 显示错误
+		continueConversationWithResult({ data: null, errorMessage: error.message, stack: error.stack });
+		return; // 停止继续渲染当前消息
+	}
 	// 遍历内容片段,创建对应的 DOM 元素
 	fragments.forEach((fragment) => {
 		if (fragment.type === 'text') {
@@ -717,20 +782,14 @@ function checkHasCodeBlock(aiResponse) {
  */
 async function continueConversationWithResult(result) {
 	try {
-		// 每次都重新获取一次原理图的基础信息
-		// ...
-
 		// 将结果消息添加到对话历史
 		conversationHistory.push({
 			role: 'system', // 系统角色（作为执行结果的反馈）
 			content: JSON.stringify(result), // 结果消息内容
 		}); // 添加到对话历史
 
-		// 显示停止按钮
-		stopBtn.style.display = 'block'; // 显示停止按钮
-
-		// 禁用输入和发送按钮
-		setInputDisabled(true); // 禁用输入框
+		// 更新为代码执行中状态
+		updateUIState(UI_STATE.EXECUTING); // 更新界面状态
 		updateStatus('AI 正在处理结果...', 'info'); // 更新状态
 
 		// 添加加载指示器
@@ -745,7 +804,6 @@ async function continueConversationWithResult(result) {
 
 			if (hasCodeBlock) {
 				// 如果包含代码块,等待代码执行完成后再继续（代码执行会自动触发继续对话）
-				// 这里不需要额外操作,因为代码执行按钮的 onclick 事件会自动调用 continueConversationWithResult
 				console.log('AI 返回了新的代码,等待执行...'); // 输出日志
 			} else {
 				// 如果没有代码块,说明对话结束
@@ -754,25 +812,19 @@ async function continueConversationWithResult(result) {
 
 			updateStatus('', ''); // 清空状态文本
 
-			// 滚动到底部
-			// scrollToBottom(); // 滚动到消息底部
 		} catch (error) {
 			// 处理错误
 			handleAIError(error, loadingId, '继续对话失败'); // 统一错误处理
 		} finally {
-			// 隐藏停止按钮
-			stopBtn.style.display = 'none'; // 隐藏停止按钮
-
-			// 恢复输入和发送按钮
-			setInputDisabled(false); // 恢复输入框
+			// 恢复为空闲状态
+			updateUIState(UI_STATE.IDLE); // 恢复界面状态
 			messageInput.focus(); // 聚焦到输入框
 		}
 	} catch (error) {
 		// 如果继续对话失败,记录错误但不影响界面
 		console.error('继续对话失败:', error); // 输出错误日志
 		updateStatus('', ''); // 清空状态文本
-		stopBtn.style.display = 'none'; // 隐藏停止按钮
-		setInputDisabled(false); // 恢复输入框
+		updateUIState(UI_STATE.IDLE); // 恢复为空闲状态
 	}
 }
 
@@ -847,14 +899,7 @@ function handleClearChat() {
 	}, 2000); // 2 秒后清空
 }
 
-/**
- * 设置输入框禁用状态
- * @param disabled - 是否禁用
- */
-function setInputDisabled(disabled) {
-	messageInput.disabled = disabled; // 设置输入框禁用状态
-	sendBtn.disabled = disabled; // 设置发送按钮禁用状态
-}
+
 
 /**
  * 更新状态文本

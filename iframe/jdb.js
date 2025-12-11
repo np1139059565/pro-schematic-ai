@@ -28,203 +28,68 @@ window.jdbResourceList = [
 // 提示列表(流程、步骤、规则)
 window.jdbPromptList = [
 	{
-		name: 'guideline_workflow_prompt',
-		description: '原理图交互流程速览与回复规范',
+		name: 'guideline_roles_prompt',
+		description: '对话角色定义',
 		messages: [
 			{
-				role: 'workflow_overview',
+				role: 'roles',
+				description: '对话角色定义',
 				content: {
 					type: 'text',
 					text: `
-问答/操作分支；操作类采用 read→write 循环:
-- write 前不可用陈旧坐标/元件数据,必须先 read 最新数据
-- 根据数据小心验证 write 参数是否正确，再 write
-- 完成后若仍有待办继续下一轮
-`
+本对话系统包含三种角色,你需要清楚理解每种角色的作用:
+  1. system(扩展自动执行):定义你的角色、职责和工作流程,并自动执行你返回的代码块,并将执行结果以system角色消息反馈给你(格式为JSON字符串,包含data/errorMessage/stack),直到没有返回代码为止(对话结束)。
+  2. user(用户消息):用户的问题和需求,以自然语言形式发送给你。
+  3. assistant(助手回复):你的回复内容,包括简洁的文本说明和代码块。
+				`
 				}
-			},
+			}
+		]
+	},
+	{
+		name: 'guideline_workflow_prompt',
+		description: '交互流程与回复规范',
+		messages: [
 			{
 				role: 'workflow_steps',
+				description: '交互流程',
 				content: {
 					type: 'text',
 					text: `
-原理图交互流程:
-1) 判断用户意图: 询问类(仅读取/回答) 与 操作类(需要修改)
-2) 询问类: 编写 read 代码块获取所需信息 -> 根据返回给出回答
-3) 操作类循环:
-   a. 先写 read 代码块获取最新画布/元件/导线状态
-   b. 计算方案后写 write 代码块执行修改
-   c. 系统返回结果后, 如未完成继续下一轮 read → write
-4) 写前必须使用最新状态, 禁用陈旧坐标/元件数据
-
-**公共规则(所有操作类任务必须遵守)**:
-- 所有 write 操作前必须先 read 获取最新状态,避免使用陈旧数据
-- 布局/布线/修正等操作前必须先 read 获取画布/元件/导线的最新坐标和状态
-- 每次修正前必须 read 最新状态,避免用陈旧坐标
+  1.先获取画布大小以及元件/导线等最新状态
+  2.再根据用户需求,通过返回代码块的方式调用mcp工具集进行操作
+  3.收到system角色反馈的结果后进行分析并回答,如未完成继续下一轮 read → write
 `
 				}
 			},
 			{
 				role: 'reply_style',
+				description: '回复规范',
 				content: {
 					type: 'text',
 					text: `
 对话与回复规范:
-- 角色: system(自动执行/状态反馈), user(用户输入), assistant(AI 回复/生成代码块)
-- 回复使用中文, 专业简洁, 不重复过程描述
-- system检测到代码块时会按类型自动执行,不能在一次对话中返回多个代码块; 无代码块则视为结束
-- 避免冗长, 直接给出结论与必要步骤
+先获取画布大小。
+\`\`\`javascript:read
+const resp = { data: null, errorMessage: null, stack: null };
+resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
+return resp;
+\`\`\`
+...
 
-**强制要求**:
+注意事项:
+- 回复使用中文, 专业简洁, 不重复过程描述
+- 不能在一次回复中包含多个代码块,思考代码是否可以合并执行,避免重复操作,代码块格式阅读 guideline_code_block_prompt。
+- 请按照步骤逐步返回,不能一次性返回所有内容,否则会报错。
+- system角色反馈的结果过长会使用文件的形式告诉你,你应该阅读后做出回答,不要在回复中提到该文件。
+- 你是运行在浏览器虚拟环境中,不要在本地生成任何文件,不要在回复中提到本地文件。
 - 每次执行操作前,必须在回复开头明确说明基于哪条提示,格式为:"根据 [提示名称] 的[描述],我将..."
 - 例如:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将按功能分组放置元件"
 - 例如:"根据 guideline_smart_routing_prompt 的智能布线策略,我将连接电源线,确保最小间距>=20mil"
 - 例如:"根据 guideline_drc_repair_prompt 的事后校验提示,我将检查所有导线的间距和角度"
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_tool_usage_prompt',
-		description: 'MCP工具集使用与API搜索规范',
-		messages: [
-			{
-				role: 'tool_usage',
-				content: {
-					type: 'text',
-					text: `
-MCP工具集使用与API搜索规范:
-
-**工具查询流程**:
-1) 优先使用 mcpEDA.listTools 查询可用自定义工具集(这是很小一部分稳定的自定义API,并不是全量的自定义API)
-2) 如果没有满足要求的API,再用 searchTools 进行全量搜索原生API(原生API数量庞大,且很多API无效)
-3) 禁止直接调用未查询的 API 名称,避免 getComponents 等不存在的名称
-
-**搜索API标准流程**:
-1) 明确意图并拆关键词: 业务动作 + 对象 + 约束,如 ["search","component","library","搜索","元件","库",...]
-2) 调用 searchTools: await mcpEDA.callTool({ name: 'searchTools', arguments: { keywords: [...] } })
-3) 解析结果: 将按 score 降序取前 N (默认前10),如果结果大于10,则说明结果不够精准,需要补充/替换/调整关键词重搜,直到结果小于10,大于0为止
-4) 若无命中: 补充/替换/调整关键词重搜; 关键词无关中英文,关键词越多,最后的搜索结果将越准确
-5) 选定 API 后再 callTool,严格按 inputSchema 传参,不得遗漏必填项
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_layout_planning_prompt',
-		description: '前期布局规划与网络标签策略',
-		messages: [
-			{
-				role: 'layout_planning',
-				content: {
-					type: 'text',
-					text: `
-前期布局规划:
-- 功能分组: 按电源/信号/控制/接口等模块集中摆放,减少跨模块长距离布线
-- 元件间距: 计算引脚/封装边界,模块之间预留>=100mil 安全距离
-- 网络标签优先: 相同网络标签视为同一路径,优先用标签替代跨图直线,源头减少交叉
-- 流向布局: 按输入→处理→输出的信号流向摆放,避免反向走线
-
-**强制要求**:
-- 在代码中必须计算元件间距,确保模块之间预留>=100mil安全距离
-- 必须在回复中明确说明:"根据 guideline_layout_planning_prompt 的前期布局规划提示,我将..."
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_smart_routing_prompt',
-		description: '绕行/推挤与最小间距智能布线',
-		messages: [
-			{
-				role: 'smart_routing',
-				content: {
-					type: 'text',
-					text: `
-智能布线策略:
-- 模式: 新导线遇障碍优先绕行,不可绕行时尝试推挤,禁止直接重叠
-- 最小间距: 导线-导线>=20mil; 导线-元件边界>=20mil,实时检测违规立即重算路径
-- 拐角: 优先45°走线,禁止随意锐角; 必要时用两段45°替代90°
-- 路径探测: 预检查候选路径与现有导线/元件的碰撞,选无碰撞且长度/拐点数最优方案
-- 动态调整: 绘制过程中若检测到重叠/压盖,即时偏移或改道
-
-**强制要求**:
-- 必须在回复中明确说明:"根据 guideline_smart_routing_prompt 的智能布线策略,我将..."
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_routing_constraints_prompt',
-		description: '布线约束与信号流向规则',
-		messages: [
-			{
-				role: 'routing_constraints',
-				content: {
-					type: 'text',
-					text: `
-布线约束:
-- 信号流向: 按输入→处理→输出的顺序布线,减少回流与交叉
-- 拐角与层次: 45°优先,减少不必要的折线段; 分段时尽量共线
-- 优先级: 关键信号(时钟/高速差分/敏感模拟)优先布,确保最短/最少拐点并留隔离区
-- 边界规则: 禁止穿越元件包络,保持安全间距
-- 复用: 发现已有可用网络标签/导线路径时优先复用,避免重复新线
-
-**强制要求**:
-- 关键信号(电源、地线、时钟等)必须优先布线,确保最短路径和最少拐点
-- 必须在回复中明确说明:"根据 guideline_routing_constraints_prompt 的布线约束,我将..."
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_routing_algorithm_prompt',
-		description: 'A* / 遗传算法等全局布线优化',
-		messages: [
-			{
-				role: 'routing_algorithm',
-				content: {
-					type: 'text',
-					text: `
-算法优化:
-- 路径搜索: 可用 A* 评估(距离+拐点+碰撞罚分),生成候选路径集合
-- 全局优化: 用遗传/模拟退火等全局搜索对多条导线同时优化,目标最小总长/拐点/违规
-- 约束编码: 将最小间距、45°偏好、障碍物、关键网优先级编码进代价函数
-- 拓扑识别: 识别星型/总线/树型等拓扑,针对拓扑选择分支/汇聚策略
-- 迭代校验: 每轮生成方案后即时碰撞检测; 保留最优解并输出可执行的线段序列
-`
-				}
-			}
-		]
-	},
-	{
-		name: 'guideline_drc_repair_prompt',
-		description: '事后 DRC 校验与二次修正闭环',
-		messages: [
-			{
-				role: 'drc_repair',
-				content: {
-					type: 'text',
-					text: `
-事后校验与修正:
-- 多角度检查: 导线-导线,导线-元件,导线-引脚,拐角锐角,最小间距,定位交叉/重叠/间距不足
-- 闭环修正: 对违规线重算路径(沿用最小间距+45°+推挤/绕行),修正后再次检查,直至无违规
-- 记录与优先级: 先修关键网违规,再修普通网; 修完一条立即复检
-
-**强制要求**:
-- 完成所有布线操作后,必须执行DRC校验代码块(read类型)
-- DRC校验必须检查: 导线-导线间距(>=20mil)、导线-元件边界间距(>=20mil)、导线-引脚间距、拐角是否锐角、是否存在交叉/重叠
-- **如果发现违规,必须立即生成write代码块修正违规线,不能仅报告违规而不修正**
-  * 修正代码块必须: 1)先read获取最新导线和元件状态 2)对每条违规线重算路径,确保符合最小间距和45°角度要求 3)使用移动导线的API重新修正导线
-  * 修正后必须再次执行DRC校验代码块,检查是否还有违规
-  * 如果仍有违规,继续修正,直到DRC校验通过(无违规)为止
-- 必须在回复中明确说明:"根据 guideline_drc_repair_prompt 进行DRC校验"或"根据 guideline_drc_repair_prompt 修正违规线"
-- **禁止在发现违规后仅给出建议而不执行修正,必须实际生成修正代码块并执行**
+- 不要在回复中提到请求执行代码的话术
+- 例如:"请将执行结果发给我，我会据此设计原理图.."
+- 例如:"请执行以下代码..."
 `
 				}
 			}
@@ -232,10 +97,11 @@ MCP工具集使用与API搜索规范:
 	},
 	{
 		name: 'guideline_error_recovery_prompt',
-		description: '错误恢复与重试策略',
+		description: '错误处理与重试机制',
 		messages: [
 			{
 				role: 'error_recovery',
+				description: '错误恢复与重试策略',
 				content: {
 					type: 'text',
 					text: `
@@ -250,11 +116,258 @@ MCP工具集使用与API搜索规范:
 		]
 	},
 	{
+		name: 'guideline_code_block_prompt',
+		description: '代码块规范/返回值格式与示例',
+		messages: [
+			{
+				role: 'code_block',
+				description: '代码块规范',
+				content: {
+					type: 'text',
+					text: `
+- 返回代码块前面要有解释说明,告诉用户你要执行什么操作。
+- 代码块类型: \`\`\`javascript:read\`\`\` / \`\`\`javascript:write\`\`\`
+- 必须返回 { data, errorMessage, stack } 对象
+- 禁止包裹 try...catch 和立即执行的自调用形式; 按规范直接编写 await 逻辑
+- 每次只返回一段代码块, 不得多段
+`}
+			},
+			{
+				role: 'code_block_back',
+				description: '代码块返回值格式',
+				content: {
+					type: 'text',
+					text: `
+\`\`\`javascript
+{
+  data: any,           // 执行结果（成功时）
+  errorMessage: string | null,  // 错误信息（失败时）
+  stack: string | null          // 错误堆栈（失败时）
+}
+\`\`\`
+	`}
+			},
+			{
+				role: 'code_block_example',
+				description: '代码块示例',
+				content: {
+					type: 'text',
+					text: `
+**示例**（只读）:
+\`\`\`javascript:read
+const resp = { data: null, errorMessage: null, stack: null };
+resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
+return resp;
+\`\`\`
+
+**示例**（写入）:
+\`\`\`javascript:write
+const resp = { data: null, errorMessage: null, stack: null };
+const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+resp.data = data;
+return resp;
+\`\`\`
+
+**错误示例**（禁止使用）:
+\`\`\`javascript:read
+// 错误:使用了try...catch包裹代码和立即执行的自调用形式,还没有使用mcpEDA.callTool调用API.
+const resp = { data: null, errorMessage: null, stack: null };
+(async () => {
+  try {
+    const tools = await eda.sch_PrimitiveComponent.getAll();
+    resp.data = { tools };
+  } catch (err) {
+    resp.errorMessage = err?.message || String(err);
+    resp.stack = err?.stack || null;
+  }
+  return resp;
+})();
+\`\`\`
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_tool_usage_prompt',
+		description: 'MCP工具查询与API搜索流程',
+		messages: [
+			{
+				role: 'tool_usage',
+				description: 'MCP工具集使用',
+				content: {
+					type: 'text',
+					text: `
+1) 优先使用 mcpEDA.listTools 查询可用自定义工具集(这是很小一部分稳定的自定义API,并不是全量的自定义API)
+2) 如果没有满足要求的API,再用 searchTools 进行全量搜索原生API(原生API数量庞大,且很多API无效)
+3) 禁止直接调用未查询的 API 名称,避免 getComponents 等不存在的名称
+`
+				}
+			},
+			{
+				role: 'search_api_standard',
+				description: '搜索API标准流程',
+				content: {
+					type: 'text',
+					text: `
+1) 明确意图并拆关键词: 业务动作 + 对象 + 约束,如 ["search","component","library","搜索","元件","库",...]
+2) 调用 searchTools: await mcpEDA.callTool({ name: 'searchTools', arguments: { keywords: [...] } })
+3) 解析结果: 将按 score 降序取前 N (默认前10),如果结果大于10,则说明结果不够精准,需要补充/替换/调整关键词重搜,直到结果小于10,大于0为止
+4) 若无命中: 补充/替换/调整关键词重搜; 关键词无关中英文,关键词越多,最后的搜索结果将越准确
+5) 选定 API 后再 callTool,严格按 inputSchema 传参,不得遗漏必填项
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_spacing_standards_prompt',
+		description: '原理图设计间距标准规范',
+		messages: [
+			{
+				role: 'spacing_standards',
+				description: '间距标准规范',
+				content: {
+					type: 'text',
+					text: `
+原理图设计间距标准规范:
+- 导线-导线间距: >=20mil
+- 导线-元件边界间距: >=20mil
+- 导线-引脚间距: >=20mil
+- 元件-元件边界间距: >=100mil
+- 元件-导线边界间距: >=20mil
+
+**适用范围**: 所有布局规划和布线操作必须遵循此间距标准
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_layout_planning_prompt',
+		description: '前期布局规划与网络标签策略',
+		messages: [
+			{
+				role: 'layout_planning',
+				description: '前期布局规划与网络标签策略',
+				content: {
+					type: 'text',
+					text: `
+前期布局规划:
+- 功能分组: 按电源/信号/控制/接口等模块集中摆放,减少跨模块长距离布线
+- 元件间距: 计算引脚/封装边界,模块边界之间预留>=100mil 安全距离(参考 guideline_spacing_standards_prompt)
+- 网络标签优先: 相同网络标签视为同一路径,优先用标签替代跨图直线,源头减少交叉
+- 流向布局: 按输入→处理→输出的信号流向摆放,避免反向走线
+
+**强制要求**:
+- 在代码中必须计算元件间距,确保模块边界之间预留>=100mil安全距离(参考 guideline_spacing_standards_prompt)
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_smart_routing_prompt',
+		description: '智能布线绕行与推挤策略',
+		messages: [
+			{
+				role: 'smart_routing',
+				description: '智能布线策略',
+				content: {
+					type: 'text',
+					text: `
+智能布线策略:
+- 模式: 新导线遇障碍优先绕行,不可绕行时尝试推挤,禁止直接重叠
+- 间距要求: 遵循 guideline_spacing_standards_prompt 的间距标准(导线-导线>=20mil, 导线-元件边界>=20mil),实时检测违规立即重算路径
+- 角度要求: 优先45°走线,禁止随意锐角; 必要时用两段45°替代90°
+- 路径探测: 预检查候选路径与现有导线/元件的碰撞,选无碰撞且长度/拐点数最优方案
+- 动态调整: 绘制过程中若检测到重叠/压盖,即时偏移或改道
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_routing_constraints_prompt',
+		description: '信号流向与布线优先级规则',
+		messages: [
+			{
+				role: 'routing_constraints',
+				description: '布线约束规则',
+				content: {
+					type: 'text',
+					text: `
+布线约束:
+- 信号流向: 按输入→处理→输出的顺序布线,减少回流与交叉
+- 角度要求: 45°优先,减少不必要的折线段; 分段时尽量共线(参考 guideline_smart_routing_prompt)
+- 优先级: 关键信号(时钟/高速差分/敏感模拟)优先布,确保最短/最少拐点并留隔离区
+- 边界规则: 禁止穿越元件包络,保持安全间距(参考 guideline_spacing_standards_prompt)
+- 复用: 发现已有可用网络标签/导线路径时优先复用,避免重复新线
+
+**强制要求**:
+- 关键信号(电源、地线、时钟等)必须优先布线,确保最短路径和最少拐点
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_routing_algorithm_prompt',
+		description: '全局布线算法优化策略',
+		messages: [
+			{
+				role: 'routing_algorithm',
+				description: '算法优化策略',
+				content: {
+					type: 'text',
+					text: `
+算法优化:
+- 路径搜索: 可用 A* 评估(距离+拐点+碰撞罚分),生成候选路径集合
+- 全局优化: 用遗传/模拟退火等全局搜索对多条导线同时优化,目标最小总长/拐点/违规
+- 约束编码: 将间距标准(参考 guideline_spacing_standards_prompt)、45°偏好(参考 guideline_smart_routing_prompt)、障碍物、关键网优先级编码进代价函数
+- 拓扑识别: 识别星型/总线/树型等拓扑,针对拓扑选择分支/汇聚策略
+- 迭代校验: 每轮生成方案后即时碰撞检测; 保留最优解并输出可执行的线段序列
+`
+				}
+			}
+		]
+	},
+	{
+		name: 'guideline_drc_repair_prompt',
+		description: 'DRC校验与违规修正流程',
+		messages: [
+			{
+				role: 'drc_repair',
+				description: 'DRC校验流程',
+				content: {
+					type: 'text',
+					text: `
+事后校验与修正:
+- 多角度检查: 导线-导线,导线-元件,导线-引脚,拐角锐角,最小间距,定位交叉/重叠/间距不足
+- 闭环修正: 对违规线重算路径(沿用间距标准+45°+推挤/绕行),修正后再次检查,直至无违规
+- 记录与优先级: 先修关键网违规,再修普通网; 修完一条立即复检
+
+**强制要求**:
+- 完成所有布线操作后,必须执行DRC校验代码块(read类型)
+- DRC校验必须检查: 导线-导线间距、导线-元件边界间距、导线-引脚间距、拐角是否锐角、是否存在交叉/重叠(具体标准参考 guideline_spacing_standards_prompt)
+- **如果发现违规,必须立即生成write代码块修正违规线,不能仅报告违规而不修正**
+  * 修正代码块必须: 1)先read获取最新导线和元件状态 2)对每条违规线重算路径,确保符合间距标准(参考 guideline_spacing_standards_prompt)和45°角度要求(参考 guideline_smart_routing_prompt) 3)使用移动导线的API重新修正导线
+  * 修正后必须再次执行DRC校验代码块,检查是否还有违规
+  * 如果仍有违规,继续修正,直到DRC校验通过(无违规)为止
+- **禁止在发现违规后仅给出建议而不执行修正,必须实际生成修正代码块并执行**
+`
+				}
+			}
+		]
+	},
+	{
 		name: 'guideline_source_code_parse_prompt',
 		description: '原理图源码规范解析标准流程',
 		messages: [
 			{
 				role: 'sch_source_parse',
+				description: '原理图源码规范解析标准流程',
 				content: {
 					type: 'text',
 					text: `
@@ -273,28 +386,31 @@ MCP工具集使用与API搜索规范:
 	},
 	{
 		name: 'guideline_component_bounds_prompt',
-		description: '元件边界计算与碰撞检测规则',
+		description: '元件边界计算与碰撞检测',
 		messages: [
 			{
 				role: 'component_bounds',
+				description: '元件边界与碰撞检测',
 				content: {
 					type: 'text',
 					text: `
 元件边界计算与碰撞检测规则:
-- **重要流程**: 元件必须放置到原理图上才能获取元件坐标，因此流程为：先放置元件 → 获取元件信息 → 计算边界 → 检查碰撞 → 如有问题则移动元件
+- **重要流程**: 元件必须放置到原理图上才能获取元件坐标，因此流程为：先放置元件 → 获取元件信息 → 计算边界 → 绘制多边形 → 检查碰撞 → 如有问题则移动元件
 - 放置元件: 使用放置元件的API将元件放置到原理图上
 - 获取元件信息: 放置后使用获取所有元件的API获取元件列表，或通过返回的组件对象获取元件标识符
 - 获取引脚坐标: 使用获取元件引脚坐标的API获取元件的所有引脚坐标
 - 计算边界: 调用计算元件边界的API计算元件的矩形边界，建议使用 expandMil=10 作为默认膨胀距离
+- 上面"放置元件""获取元件信息""获取引脚坐标""计算边界"四步可以在同一个代码块内一次性完成并返回，无需多代码块单独执行(但是不能同时放置多个元件)
 - 边界格式: [x1,y1,x2,y2,x3,y3,x4,y4] (顺时针: 左下→右下→右上→左上)
-- 碰撞检测: 检查新放置的元件边界是否与已存在的元件边界/导线重叠或距离过近（建议元件与元件之间>=100mil，元件与导线之间>=20mil）
+- 绘制多边形: 使用绘制多边形的API绘制元件的边界多边形,必须是闭合的短划线DASHED多边形(ESCH_PrimitiveLineType.DASHED)
+- 碰撞检测: 检查新放置的元件边界是否与已存在的元件边界/导线重叠或距离过近(具体标准参考 guideline_spacing_standards_prompt: 元件-元件>=100mil, 元件-导线>=20mil)
 - 移动元件: 如果检测到碰撞，必须重新计算元件位置并移动元件到合适位置
 `
 				}
 			}
 		]
 	}
-]
+];
 
 // mcp工具格式的api快速查询列表
 window.jdbToolList = [
@@ -14899,7 +15015,7 @@ window.jdbToolList = [
 				},
 				"property": {
 					"type": "object",
-					"description":"需要修改的参数{x?:number,y?:number,rotation?:number,mirror?:boolean,addIntoBom?:boolean,addIntoPcb?:boolean,designator?:string|null,name?:string|null,uniqueId?:string|null,manufacturer?:string|null,manufacturerId?:string|null,supplier?:string|null,supplierId?:string|null,otherProperty?:{[key:string]:string|number|boolean,},}"
+					"description": "需要修改的参数{x?:number,y?:number,rotation?:number,mirror?:boolean,addIntoBom?:boolean,addIntoPcb?:boolean,designator?:string|null,name?:string|null,uniqueId?:string|null,manufacturer?:string|null,manufacturerId?:string|null,supplier?:string|null,supplierId?:string|null,otherProperty?:{[key:string]:string|number|boolean,},}"
 				}
 			},
 			"required": []
