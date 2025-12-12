@@ -634,7 +634,7 @@ function addMessageToChat(role, content, isError = false) {
 	const fragments = parseMessageContent(content); // 解析内容
 	const codeFragments = fragments.filter((fragment) => fragment.type === 'code'); // 统计代码片段
 	let error = null;
-	else if (codeFragments.length > 1) { // 多于一个代码块则视为异常
+	if (codeFragments.length > 1) { // 多于一个代码块则视为异常
 		console.error('检测到多个代码块，已中止渲染'); // 记录错误日志
 		error = new Error('❌ 错误:每次回答只能返回单个代码块,请重新回答');
 	} else if (codeFragments.length > 0 && fragments[fragments.length - 1].type === 'text'
