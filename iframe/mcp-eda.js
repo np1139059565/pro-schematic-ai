@@ -20,13 +20,13 @@ async function callTool(params) {
 		// 检查工具是否存在
 		if (window.customeTools[name] === null && (className === undefined || methodName === undefined || eda[className]?.[methodName] === null)) {
 			// 返回符合 MCP 规范的错误格式
-			return buildTextResponse(`工具不存在: ${name}`, true);
+			return buildResponse({ type: 'text', text: `工具不存在: ${name}` }, true);
 		}
 		// 验证工具参数
 		const toolSchema = window.customeTools.toolList.find(tool => tool.name === name) || window.jdbToolList.find(tool => tool.name === name);
 		const validateResult = validateArguments(args, toolSchema?.inputSchema);
 		if (validateResult !== null) {
-			return buildTextResponse(`工具参数验证失败: ${validateResult}`, false);
+			return buildResponse({ type: 'text', text: `工具参数验证失败: ${validateResult}` }, true);
 		}
 		// 优先调用自定义工具(自定义工具名称格式为:className$methodName)
 		const tool = window.customeTools[name.replace('.', '$')] || eda[className]?.[methodName];
@@ -38,15 +38,28 @@ async function callTool(params) {
 			: await tool(...Object.values(args) || {});
 
 		// 包装为符合 MCP 规范的返回格式
-		if (result !== null && ['string', 'number', 'boolean', 'object'].includes(typeof result)) {
-			return buildTextResponse(typeof result === 'string' ? result : JSON.stringify(result, null, 2), false);
+		if (result !== null && result.content != null) {
+			return buildResponse(result.content, false);
 		} else {
-			return buildTextResponse(`工具执行失败 [${name}]: ${result}`, true);
+			return buildResponse({ type: 'text', text: `工具执行失败 [${name}]: ${result}` }, true);
 		}
 	} catch (error) {
 		// 包装错误信息为符合 MCP 规范的格式
-		return buildTextResponse(`工具执行失败 [${name}]: ${error.message}`, true);
+		return buildResponse({ type: 'text', text: `工具执行失败 [${name}]: ${error.message}` }, true);
 	}
+}
+
+/**
+ * 统一构造文本返回结果,保证结构一致性
+ * @param {*} content 结果对象
+ * @param {*} isError 是否错误
+ * @returns 
+ */
+function buildResponse(content, isError) {
+	return {
+		content: content,
+		isError, // 是否错误标记
+	};
 }
 
 // 参数验证（基于 JSON Schema）
@@ -73,7 +86,7 @@ function validateArguments(args, schema) {
 	}
 
 	// 检查参数类型
-	if (schema.properties) {
+	if (args != null && schema.properties) {
 		for (const [key, value] of Object.entries(args)) {
 			const propSchema = schema.properties[key];
 			if (propSchema) {
@@ -97,23 +110,6 @@ function validateArguments(args, schema) {
 	return null; // 验证通过
 }
 
-/**
- * 统一构造文本返回结果,保证结构一致性
- * @param {*} text 文本内容
- * @param {*} isError 是否错误
- * @returns 
- */
-function buildTextResponse(text, isError) {
-	return {
-		content: [
-			{ // 单条内容
-				type: "text", // 内容类型标记
-				text, // 具体文本内容
-			}
-		],
-		isError, // 是否错误标记
-	};
-}
 
 /**
  * 列出所有工具 (符合 MCP 规范)
@@ -143,11 +139,11 @@ async function readResource(params) {
 
 	// 查找资源
 	const resource = window.jdbResourceList.find(resource => resource.uri === uri);
-	// if (!resource) {
-	// 	const error = new Error(`资源不存在: ${uri}`);
-	// 	error.code = 'RESOURCE_NOT_FOUND';
-	// 	throw error;
-	// }
+	if (!resource) {
+		const error = new Error(`资源不存在: ${uri}`);
+		error.code = 'RESOURCE_NOT_FOUND';
+		throw error;
+	}
 
 	// 返回符合 MCP 规范的格式
 	return {
@@ -233,7 +229,12 @@ function searchTools({ keywords }) {
 
 	// 如果关键词数组为空,返回空数组
 	if (keywords.length === 0) {
-		return [];
+		return {
+			content: {
+				type: 'array',
+				items: []
+			}
+		};
 	}
 
 	// 过滤并计算权重
@@ -278,7 +279,12 @@ function searchTools({ keywords }) {
 			}
 			return result;
 		});
-	return results.filter(result => result.score > 0).slice(0, 10); // 返回排序后的结果,最多返回10条结果
+	return {
+		content: {
+			type: 'array',
+			items: results.filter(result => result.score > 0).slice(0, 10) // 返回排序后的结果,最多返回10条结果
+		}
+	};
 }
 
 /**
@@ -323,8 +329,8 @@ async function getCanvasSize() {
 	}
 	return {
 		content: {
-			width: { type: "number", value: canvasWidth },
-			height: { type: "number", value: canvasHeight }
+			width: canvasWidth,
+			height: canvasHeight
 		}
 	};
 }
@@ -352,19 +358,9 @@ async function lib_Device$search({ keyword, libraryUuid = null, itemsOfPage = nu
 	return {
 		content: {
 			type: 'array',
-			items: result.map(item =>
-			({
-				type: 'object',
-				properties: {
-					uuid: {
-						type: 'string',
-						value: item.uuid
-					},
-					libraryUuid: {
-						type: 'string',
-						value: item.libraryUuid
-					}
-				}
+			items: result.map(item => ({
+				uuid: item.uuid,
+				libraryUuid: item.libraryUuid
 			}))
 		}
 	};
@@ -393,7 +389,6 @@ async function sch_PrimitiveComponent$create({ uuid, libraryUuid, x, y, subPartN
 	await comp.done();
 	return {
 		content: {
-			type: 'text',
 			primitiveId: comp.getState_PrimitiveId()
 		}
 	};
@@ -408,10 +403,7 @@ async function sch_PrimitiveComponent$delete({ primitiveIds }) {
 	}
 	const result = await eda.sch_PrimitiveComponent.delete(primitiveIds);
 	return {
-		content: {
-			type: 'text',
-			text: ''
-		}
+		content: {}
 	};
 }
 
@@ -423,24 +415,11 @@ async function sch_PrimitiveComponent$getAll({ cmdKey = null, allSchematicPages 
 	return {
 		content: {
 			type: 'array',
-			items: result.map(item =>
-			({
-				type: 'object',
-				properties: {
-					primitiveId: {
-						type: 'string',
-						value: item.primitiveId
-					},
-					x: {
-						type: 'number',
-						value: item.x
-					},
-					y: {
-						type: 'number',
-						value: item.y
-					}
-				}
-			}))
+			items: result.map(item => ({
+				primitiveId: item.primitiveId,
+				x: item.x,
+				y: item.y
+			})).filter(item=>!(item.x==0&&item.y==0))//过滤掉x=0,y=0的元件(画布)
 		}
 	};
 }
@@ -454,7 +433,15 @@ async function sch_PrimitiveComponent$getAllPinsByPrimitiveId({ primitiveId, inv
 	}
 	const pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(primitiveId);
 
-	return { content: pins.map(p => ({ x: p.x, y: (invertY ? -p.y : p.y) })) };
+	return {
+		content: {
+			type: 'array',
+			items: pins.map(p => ({
+				x: p.x,
+				y: (invertY ? -p.y : p.y)
+			}))
+		}
+	};
 }
 
 /**
@@ -468,7 +455,11 @@ async function sch_PrimitiveComponent$modify({ primitiveId, property }) {
 		throw new Error('property 必填且必须为对象');
 	}
 	const comp = await eda.sch_PrimitiveComponent.modify(primitiveId, property);
-	return { content: { type: 'text', primitiveId: comp.getState_PrimitiveId() } };
+	return {
+		content: {
+			primitiveId: comp.getState_PrimitiveId()
+		}
+	};
 }
 
 /**
@@ -482,7 +473,9 @@ async function sch_PrimitiveWire$create({ line, net = null, color = '#000000', l
 		throw new Error('color 可以不传,但必须不能为null或undefined');
 	}
 	const wire = await eda.sch_PrimitiveWire.create(line, net, color, lineWidth, lineType);
-	return { content: { type: 'text', text: '' } };
+	return {
+		content: {}
+	};
 }
 
 /**
@@ -493,7 +486,9 @@ async function sch_PrimitiveWire$delete({ primitiveIds }) {
 		throw new Error('primitiveIds 必填');
 	}
 	const result = await eda.sch_PrimitiveWire.delete(primitiveIds);
-	return { content: { type: 'text', text: '' } };
+	return {
+		content: {}
+	};
 }
 
 /**
@@ -501,7 +496,20 @@ async function sch_PrimitiveWire$delete({ primitiveIds }) {
  */
 async function sch_PrimitiveWire$getAll({ net = null }) {
 	const result = await eda.sch_PrimitiveWire.getAll(net);
-	return { content: { type: 'array', items: result } };
+	return {
+		content: {
+			type: 'array',
+			items: result.map(item => ({
+				color: item.color,
+				lineWidth: item.lineWidth,
+				lineType: item.lineType,
+				net: item.net,
+				primitiveId: item.primitiveId,
+				primitiveType: item.primitiveType,
+				line: item.line
+			}))
+		}
+	};
 }
 
 /**
@@ -515,7 +523,9 @@ async function sch_PrimitiveWire$modify({ primitiveId, property }) {
 		throw new Error('property 必填且必须为对象');
 	}
 	const wire = await eda.sch_PrimitiveWire.modify(primitiveId, property);
-	return { content: { type: 'text', text: '' } };
+	return {
+		content: {}
+	};
 }
 
 // 创建原理图多边形（确保坐标数组有效）
@@ -531,7 +541,9 @@ async function sch_PrimitivePolygon$create({ line, color = null, fillColor = nul
 	// 调用原生 API 创建多边形
 	const polygon = await eda.sch_PrimitivePolygon.create(line, color, fillColor, lineWidth, lineType);
 	// 返回统一的 content 包装
-	return { content: { type: 'text', text: '' } };
+	return {
+		content: {}
+	};
 }
 
 // 删除原理图多边形
@@ -543,15 +555,33 @@ async function sch_PrimitivePolygon$delete({ primitiveIds }) {
 	// 调用原生 API 删除多边形
 	const result = await eda.sch_PrimitivePolygon.delete(primitiveIds);
 	// 返回统一的 content 包装
-	return { content: { type: 'text', text: '' } };
+	return {
+		content: {}
+	};
 }
 
 // 获取全部原理图多边形
-async function sch_PrimitivePolygon$getAll() {
+async function sch_PrimitivePolygon$getAll({ invertY = true }) {
 	// 调用原生 API 获取全部多边形
 	const result = await eda.sch_PrimitivePolygon.getAll();
 	// 返回统一的 content 包装
-	return { content: { type: 'array', items: result } };
+	return {
+		content: {
+			type: 'array',
+			items: result.map(item => ({
+				color: item.color,
+				lineWidth: item.lineWidth,
+				lineType: item.lineType,
+				primitiveId: item.primitiveId,
+				primitiveType: item.primitiveType,
+				line: item.line.map(line => ({
+					x: line.x,
+					y: (invertY ? -line.y : line.y),
+					hashed: line.hashed
+				}))
+			}))
+		}
+	};
 }
 
 /**
@@ -559,7 +589,11 @@ async function sch_PrimitivePolygon$getAll() {
  */
 async function sys_FileManager$getDocumentSource() {
 	const result = await eda.sys_FileManager.getDocumentSource();
-	return { content: { type: 'text', text: result } };
+	return {
+		content: {
+			text: result
+		}
+	};
 }
 
 /**
@@ -573,7 +607,7 @@ async function calculateComponentBounds({ pins, expandMil = 10 }) {
 	// 边界校验：无引脚时返回空数组
 	if (!Array.isArray(pins) || pins.length === 0) {
 		console.warn('引脚列表不能为空');
-		return { content: [] };
+		return { content: { type: 'array', items: [] } };
 	}
 
 	// 1. 计算所有引脚膨胀后的最小/最大坐标（膨胀=点向四周扩展expandMil）
@@ -611,7 +645,12 @@ async function calculateComponentBounds({ pins, expandMil = 10 }) {
 		minX, maxY   // 左上
 	];
 
-	return { content: bounds };
+	return {
+		content: {
+			type: 'array',
+			items: bounds
+		}
+	};
 }
 
 window.customeTools = {
@@ -635,7 +674,12 @@ window.customeTools = {
 	toolList: [
 		{
 			name: 'searchTools',
-			description: '搜索mcp工具列表,并按权重降序排序,最多返回10条结果,支持多个关键词组合搜索,多个关键词使用OR逻辑;先查看mcp工具的搜索规范 guideline_tool_usage_prompt',
+			description: `
+搜索MCP工具列表；
+参数说明：支持多个关键词组合搜索，多个关键词使用OR逻辑,最多返回10条结果，按权重降序排序；
+返回格式：{ content: { type: 'array', items: [{ name: string, description: string, inputSchema: Object, score: number }] } }；
+注意：先查看mcp工具的搜索规范 guideline_tool_usage_prompt
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -647,7 +691,11 @@ window.customeTools = {
 		},
 		{
 			name: 'getCanvasSize',
-			description: '获取图纸边界(画布大小,所有元件/导线不能超过该范围,单位:mil)',
+			description: `
+获取图纸边界（画布大小）；
+返回格式：{ content: { width: number, height: number } }；
+注意：所有元件和导线不能超过该范围
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {},
@@ -657,9 +705,10 @@ window.customeTools = {
 		{
 			name: 'lib_Device$search',
 			description: `
-元件搜索；
-带分页参数(itemsOfPage/page)时必须提供 libraryUuid;
-返回[{uuid:'123',libraryUuid:'123'},{uuid:'123',libraryUuid:'123'}]
+搜索元件库中的元件；
+返回格式：{ content: { type: 'array', items: [{ uuid: string, libraryUuid: string }] } }；
+注意：使用分页参数时必须提供 libraryUuid；
+
 			`,
 			inputSchema: {
 				type: 'object',
@@ -675,8 +724,8 @@ window.customeTools = {
 		{
 			name: 'sch_PrimitiveComponent$create',
 			description: `
-在原理图放置元件；
-使用前必须查看 guideline_layout_planning_prompt 了解布局规划规则，放置后必须查看 guideline_component_bounds_prompt 进行碰撞检测
+在原理图中放置元件；
+返回格式：{ content: { primitiveId: string } }；
 			`,
 			inputSchema: {
 				type: 'object',
@@ -696,7 +745,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$getAll',
-			description: '获取当前原理图中的所有元件列表；可选 cmdKey（筛选条件）和 allSchematicPages（是否获取所有页面）',
+			description: `
+获取当前原理图中的所有元件列表；
+返回格式：{ content: { type: 'array', items: [{ primitiveId: string, x: number, y: number }] } }；
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -725,7 +777,11 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$getAllPinsByPrimitiveId',
-			description: '获取元件引脚列表；默认对 y 轴取反以符合画布坐标习惯，可通过 invertY 控制',
+			description: `
+获取元件引脚列表；
+返回格式：{ content: { type: 'array', items: [{ x: number, y: number }] } }
+注意：默认对 y 轴取反以符合画布坐标习惯
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -737,7 +793,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$modify',
-			description: '修改原理图元件；支持修改/移动位置(x,y)、旋转(rotation)、镜像(mirror)、BOM/PCB属性(addIntoBom,addIntoPcb)、标识符(designator)、名称(name)、唯一ID(uniqueId)、制造商信息(manufacturer,manufacturerId)、供应商信息(supplier,supplierId)以及其他自定义属性(otherProperty)',
+			description: `
+修改原理图元件；
+返回格式：{ content: { primitiveId: string } }；
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -772,9 +831,10 @@ window.customeTools = {
 		{
 			name: 'calculateComponentBounds',
 			description: `
-计算原理图元件的矩形边界；
 根据引脚坐标列表计算元件的最小外接矩形，支持引脚膨胀距离设置；
-返回矩形边界顶点坐标数组（顺时针顺序：左下、右下、右上、左上），格式：[x1,y1,x2,y2,x3,y3,x4,y4]；
+返回格式：{ content: { type: 'array', items: [number, number, number, number, number, number, number, number] } }；
+注意：
+返回矩形边界顶点坐标数组[x1,y1,x2,y2,x3,y3,x4,y4]，顺时针顺序：左下、右下、右上、左上；
 在放置元件后必须调用此函数计算元件边界，用于检查碰撞和避免导线穿过元件；
 使用前必须查看 guideline_component_bounds_prompt 了解元件边界计算与碰撞检测规则
 			`,
@@ -800,10 +860,16 @@ window.customeTools = {
 		{
 			name: 'sch_PrimitiveWire$create',
 			description: `
-创建原理图导线；line 必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4]；
-默认线宽为2;
-使用前必须查看 guideline_routing_prompt 了解布线策略、约束、算法规则，确保最小间距和45°走线优先；
-布线完成后必须查看 guideline_routing_prompt 进行DRC校验;
+创建原理图导线；
+参数说明:
+ -线宽lineWidth: 1-10,默认1
+ -导线line:总是由两个点组成的线段Array<x1,y1,x2,y2,...>,比如[10,10,10,20,10,15,15,15]表示线段一[10,10,10,20]和线段二[10,15,15,15]
+ -如果要连接两根导线,为了避免导线断裂,应该删除旧导线,然后按照下面规则处理:
+ - 导线拐弯: 例如:旧导线[60, 50, 60, 15],新导线[60, 15, 15, 15],首尾端点相同,所以直接是[60, 50, 60, 15, 60, 15, 15, 15]
+ - 直线合并: 例如:旧导线[10,10,10,20],新导线[10,20,10,30],由于x不变,只有y变化,所以可以合并成一条线段[10,10,10,30]
+ - 导线交叉: 例如:旧导线[15,15,100,15],新导线[60,15,60,55],由于是交叉,所以从交叉点被切成多段[15,15,60,15,60,15,60,55,100,15,60,15]
+
+返回格式：{ content: {} }；
 			`,
 			inputSchema: {
 				type: 'object',
@@ -836,7 +902,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveWire$modify',
-			description: '修改原理图导线；支持修改/移动坐标(line)、网络(net)、颜色(color)、线宽(lineWidth)、线型(lineType)；line可以是扁平数组Array<number>或二维数组Array<Array<number>>',
+			description: `
+修改原理图导线；
+返回格式：{ content: { } }；
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -846,7 +915,7 @@ window.customeTools = {
 					},
 					property: {
 						type: 'object',
-						description: '修改参数对象，支持：line?:Array<number>|Array<Array<number>>, net?:string, color?:string|null, lineWidth?:number|null, lineType?:ESCH_PrimitiveLineType|null',
+						description: 'lineType可选值: 0-SOLID(实线), 1-DASHED(短划线), 2-DOTTED(点线/虚线), 3-DOT_DASHED(点划线)',
 						properties: {
 							line: {
 								oneOf: [
@@ -857,7 +926,7 @@ window.customeTools = {
 							net: { type: 'string' },
 							color: { type: ['string', 'null'] },
 							lineWidth: { type: ['number', 'null'] },
-							lineType: { type: ['number', 'null'] }
+							lineType: { type: ['number', 'null'], enum: [0, 1, 2, 3] }
 						}
 					}
 				},
@@ -866,15 +935,16 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveWire$getAll',
-			description: '获取所有原理图导线；可选net参数（网络名称）进行筛选，net可以是单个网络名称(string)或网络名称数组(Array<string>)',
+			description: `
+获取所有原理图导线；
+参数说明:lineType可选值: 0-SOLID(实线), 1-DASHED(短划线), 2-DOTTED(点线/虚线), 3-DOT_DASHED(点划线)
+返回格式：{ content: { type: 'array', items: [{ color: string, lineWidth: number, lineType: number, net: string, primitiveId: string, primitiveType: string, line: Array<number> }] } }；
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {
 					net: {
-						oneOf: [
-							{ type: 'string' },
-							{ type: 'array', items: { type: 'string' } }
-						],
+						type: 'string',
 						description: '网络名称，可选，用于筛选特定网络的导线'
 					}
 				},
@@ -884,20 +954,10 @@ window.customeTools = {
 		{
 			name: 'sch_PrimitivePolygon$create',
 			description: `
-			创建多边形,用于绘制元件的边界(闭合的短划线DASHED多边形(ESCH_PrimitiveLineType.DASHED)；
-			line 为连续坐标数组（长度为偶数且不少于6，至少三点）；fillColor null 表示无填充;
-			lineType必须是ESCH_PrimitiveLineType.xxx这种格式,禁止添加引号;
-			使用示例:
-const polygon = await mcpEDA.callTool({
-  name: 'sch_PrimitivePolygon$create',
-  arguments: {
-    line,
-    color: '#FFA500',
-    fillColor: null,
-    lineWidth: 2,
-    lineType: ESCH_PrimitiveLineType.DASHED
-  }
-});
+创建多边形，用于绘制元件的边界；
+参数说明:lineType可选值: 0-SOLID(实线), 1-DASHED(短划线), 2-DOTTED(点线/虚线), 3-DOT_DASHED(点划线)
+返回格式：{ content: {} }；
+注意：用于绘制元件边界时建议使用闭合的短划线(DASHED,lineType=1)多边形
 			`,
 			inputSchema: {
 				type: 'object',
@@ -906,7 +966,7 @@ const polygon = await mcpEDA.callTool({
 					color: { type: ['string', 'null'] },
 					fillColor: { type: ['string', 'null'] },
 					lineWidth: { type: ['number', 'null'] },
-					lineType: { type: ['ESCH_PrimitiveLineType', 'null'], enum: ['ESCH_PrimitiveLineType.DASHED', 'ESCH_PrimitiveLineType.DOT_DASHED', 'ESCH_PrimitiveLineType.DOTTED', 'ESCH_PrimitiveLineType.SOLID'] }
+					lineType: { type: ['number', 'null'], enum: [0, 1, 2, 3] }
 				},
 				required: ['line']
 			},
@@ -930,16 +990,26 @@ const polygon = await mcpEDA.callTool({
 		},
 		{
 			name: 'sch_PrimitivePolygon$getAll',
-			description: '获取全部多边形；无参数',
+			description: `
+获取全部原理图多边形；
+返回格式：{ content: { type: 'array', items: [{ color: string, lineWidth: number, lineType: number, primitiveId: string, primitiveType: string, line: Array<{x: number, y: number, hashed: number}> }] } }；
+注意：默认对 y 轴取反以符合画布坐标习惯
+			`,
 			inputSchema: {
 				type: 'object',
-				properties: {},
+				properties: {
+					invertY: { type: 'boolean' },
+				},
 				required: []
 			},
 		},
 		{
 			name: 'sys_FileManager$getDocumentSource',
-			description: '获取文档中所有封装的源码信息，返回封装UUID和对应的文档源码字符串；先查看mcp工具的提示 guideline_source_code_parse_prompt。',
+			description: `
+获取文档中所有封装的源码信息；
+返回格式：{ content: { text: string } }；
+注意：先查看mcp工具的提示 guideline_source_code_parse_prompt
+			`,
 			inputSchema: {
 				type: 'object',
 				properties: {},

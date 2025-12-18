@@ -42,28 +42,115 @@ window.top.systemMessage = `
 
 **核心职责**:
 - 通过返回代码块方式调用mcp工具集进行原理图设计操作
-- 严格遵循所有guideline提示规则执行设计任务
+- 使用工作流引擎模式执行任务,严格按照规则拆分业务和原子操作
+- 每个原子操作执行前必须获取对应规则,执行后必须验证检查点
 - 确保设计质量符合间距标准、布线规范等要求
 
+**工作流引擎模式**:
+你必须使用工作流引擎模式执行所有任务,工作流执行流程如下:
+1. **任务识别**: 分析用户意图,识别任务类型(元件放置/导线布线/查询等)
+2. **工作流查找**: 根据任务类型查找对应工作流定义(参考business_workflow规则)
+3. **规则获取**: 按工作流步骤顺序,每个原子操作执行前必须获取对应规则
+4. **步骤执行**: 严格按照工作流步骤顺序执行,不能跳过任何步骤
+5. **检查点验证**: 每个步骤执行后必须验证检查点,检查点通过才能继续
+6. **完成确认**: 所有检查点通过后确认工作流完成
+
+**强制要求**:
+- 不能跳过任何工作流步骤
+- 不能跳过任何检查点验证
+- 每个原子操作执行前必须获取对应规则
+- 检查点失败必须触发错误恢复流程
+
+**对话角色定义**:
+本对话系统包含三种角色,你需要清楚理解每种角色的作用:
+- **system(扩展自动执行)**: 定义你的角色、职责和工作流程,并自动执行你返回的[代码块],然后将执行结果以system角色消息反馈给你,直到没有返回[代码块]为止(对话结束)。
+- **user(用户消息)**: 用户的问题和需求,以自然语言形式发送给你。
+- **assistant(助手回复)**: 你的回复内容,包括简洁的文本说明和[代码块]。
+
+**重要说明**:
+- 你是运行在浏览器虚拟环境中,不要在本地生成任何文件,不要在回复中提到本地文件
+- 若system反馈的结果太长,会使用文件的形式告诉你,你应该阅读后做出回答,不要在回复中提到该文件
+- 不要在回复中提到请求执行代码的话术,例如:"请将执行结果发给我"、"请执行以下代码"等,system会自动检测并执行
+
+**统一输出格式规范**:
+**格式要求**:
+[描述]
+[代码块]
+
+**注意**:
+- 回复使用中文,专业简洁,避免冗余描述
+- 描述内容必须把规则要点进行复述
+- 所有回复必须严格遵循以上固定输出格式,不得出现其他格式
+- 按照回复规范逐步返回,不能一次性返回多个步骤和大量内容
+- 若要调用mcp工具,则必须以[代码块]结尾(可选),若以[代码块]结尾则后面不能再添加任何描述/说明内容了
+- 每次回复的最后只能返回一个[代码块],且必须放在回复的最后
+
+**强制要求**:
+- 每次回复前必须检查描述内容是否重复/冗余等问题,防止同一个句子出现好几遍的情况
+- 必须严格执行业务流程分析后再回复内容,到底是否需要返回[代码块],还是直接回答问题,查看business_workflow规则
+
+**代码块规范要求**:
+**格式要求**:
+\`\`\`javascript:[read|write]
+[代码内容]
+[返回结构体: { data, errorMessage, stack }]
+\`\`\`
+
+**注意**:
+- [代码块]中只有获取信息的操作时,类型为read,若存在修改原理图的操作,则类型为write
+- 成功时: data 包含执行结果,errorMessage 和 stack 为 null
+- 失败时: errorMessage 包含错误信息,stack 包含错误堆栈,data 为 null
+- 代码块不能共享数据,每个代码块必须独立执行,不能依赖其他代码块的结果
+- 禁止包裹 try...catch 和立即执行的自调用形式,按规范直接编写 await 逻辑即可
+
+**代码块正确与错误示例**:
+**正确示例**:
+\`\`\`javascript:read
+const resp = { data: null, errorMessage: null, stack: null };
+resp.data = await mcpEDA.getPrompt({ name: 'guideline_initialization_prompt' });
+return resp;
+\`\`\`
+
+**正确示例**:
+\`\`\`javascript:write
+const resp = { data: null, errorMessage: null, stack: null };
+const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+resp.data = data;
+return resp;
+\`\`\`
+
+**错误示例**:
+- 错误1: 使用了try...catch包裹
+- 错误2: 使用了立即执行的自调用形式
+- 错误3: 代码块类型错误'callTool',只能是[read/write]
+\`\`\`javascript:callTool
+const resp = { data: null, errorMessage: null, stack: null };
+(async () => {
+try {
+const resp = { data: null, errorMessage: null, stack: null };
+const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
+  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
+resp.data = data;
+return resp;
+} catch (err) {
+resp.errorMessage = err?.message || String(err);
+resp.stack = err?.stack || null;
+}
+return resp;
+})();
+\`\`\`
 
 **初始化要求（二次握手流程）**:
 这是一个严格的两步握手流程,必须按顺序执行,不能跳过任何一步。
 
 **第一步（必须执行）**:
-你必须立即返回以下代码块获取核心规则,这是强制要求,不能跳过:
-\`\`\`javascript:read
-const resp = { data: null, errorMessage: null, stack: null };
-const initialization = await mcpEDA.getPrompt({ name: 'guideline_initialization_prompt' });//输出格式规范
-resp.data = { initialization };
-return resp;
-\`\`\`
-
-⚠️ **重要**:第一步必须返回代码块,不能直接回复文字,否则初始化会失败。
+你必须立即获取 guideline_initialization_prompt 的核心规则,这是强制要求,不能跳过
 
 **第二步（仅在收到执行结果后执行）**:
 收到system角色返回的JSON格式执行结果后,你才能执行第二步:回复"已理解系统定义,准备接收用户请求"。
 
-⚠️ **重要**:如果还没有收到system返回的执行结果JSON,绝对不能执行第二步。必须先执行第一步的代码块,等待执行结果返回后,才能执行第二步。
+⚠️ **重要**:绝对不能直接执行第二步。必须先执行第一步,等待执行结果返回后,才能执行第二步。
 
 `;
 // 初始化函数
@@ -641,7 +728,7 @@ function addMessageToChat(role, content, isError = false) {
 		&& fragments[fragments.length - 1].content.trim().length > 20) {
 		error = new Error('❌ 错误:每次回答只能以代码块结尾,请重新回答');
 	} else {
-		if('assistant'==role && codeFragments.length == 0){
+		if ('assistant' == role && codeFragments.length == 0) {
 			// ai 没有代码块说明自动流程结束
 			updateUIState(UI_STATE.IDLE); // 恢复为空闲状态
 			messageInput.focus(); // 聚焦输入框
@@ -718,6 +805,7 @@ function removeLoadingIndicator(loadingId) {
  * 确保系统消息在对话历史中,如果没有系统消息则执行预对话流程
  * 预对话流程包括:发送系统消息->接收命令->发送执行结果->收到指定确认消息
  * 此流程静默执行,不在界面上显示
+ * 如果检测到错误,会将错误信息返回给 AI 进行重新握手,最多重试 3 次
  * @returns 如果预对话失败则抛出错误
  */
 async function ensureSystemMessage() {
@@ -731,38 +819,70 @@ async function ensureSystemMessage() {
 			role: 'system', // 系统消息角色
 			content: window.top.systemMessage
 		}];
-		// 第一步:静默调用 API 发送系统消息,获取首次响应
-		const firstResponse = await window.ArkAPI.callArkChat(conversationHistory); // 调用 ARK API,传入系统消息
-		const firstAiResponse = parseAIResponse(firstResponse); // 解析响应
 
-		// 将首次响应添加到对话历史（静默,不显示在界面）
-		addAssistantMessageToHistory(firstAiResponse); // 添加到对话历史
+		const maxRetries = 3; // 最大重试次数
+		let retryCount = 0; // 当前重试次数
+		let initialized = false; // 是否初始化成功
 
-		// 第二步:解析响应,提取代码块
-		const fragments = parseMessageContent(firstAiResponse); // 解析内容
-		const codeFragments = fragments.filter((fragment) => fragment.type === 'code'); // 提取代码片段
+		// 循环执行握手流程,直到成功或达到最大重试次数
+		while (!initialized && retryCount < maxRetries) {
+			try {
+				// 第一步:静默调用 API 发送系统消息,获取首次响应
+				const firstResponse = await window.ArkAPI.callArkChat(conversationHistory); // 调用 ARK API,传入系统消息
+				const firstAiResponse = parseAIResponse(firstResponse); // 解析响应
 
-		// 
-		let error = null;
-		if (codeFragments.length > 1) { // 多于一个代码块则视为异常
-			console.error('检测到多个代码块，已中止渲染'); // 记录错误日志
-			error = new Error('❌ 错误:每次回答只能返回单个代码块');
-		} else if (codeFragments.length > 0 && fragments[fragments.length - 1].type === 'text'
-			&& fragments[fragments.length - 1].content.trim().length > 20) {
-			error = new Error('❌ 错误:每次回答只能以代码块结尾');
-		}
+				// 将首次响应添加到对话历史（静默,不显示在界面）
+				addAssistantMessageToHistory(firstAiResponse); // 添加到对话历史
 
-		if (!error) {
-			// 第三步:静默执行代码（不显示在界面）
-			const code = codeFragments[0].content; // 获取第一个代码块内容
-			const executionResult = await executeCode(code); // 执行代码
-			if (executionResult.errorMessage) {
-				error = new Error(`❌ 错误:${executionResult.errorMessage}`);
-			} else {
+				// 第二步:解析响应,提取代码块
+				const fragments = parseMessageContent(firstAiResponse); // 解析内容
+				const codeFragments = fragments.filter((fragment) => fragment.type === 'code'); // 提取代码片段
+
+				// 检查响应格式是否正确
+				let error = null;
+				if (codeFragments.length > 1) { // 多于一个代码块则视为异常
+					error = new Error('❌ 错误:每次回答只能返回单个代码块,请重新回答');
+				} else if (codeFragments.length > 0 && fragments[fragments.length - 1].type === 'text'
+					&& fragments[fragments.length - 1].content.trim().length > 20) {
+					error = new Error('❌ 错误:每次回答只能以代码块结尾,请重新回答');
+				} else if (codeFragments.length === 0) {
+					error = new Error('❌ 错误:初始化流程要求返回代码块,请重新回答');
+				}
+
+				// 如果检测到格式错误,将错误信息发送给 AI 进行重新握手
+				if (error) {
+					console.warn(`答复错误,重新握手 (重试 ${retryCount + 1}/${maxRetries}):`, error.message); // 记录警告日志
+					// 将错误信息作为 system 消息发送给 AI,让 AI 重新响应
+					conversationHistory.push({
+						role: 'system', // 系统角色（作为错误反馈）
+						content: error.message, // 错误消息内容
+					}); // 添加到对话历史
+					retryCount++; // 增加重试次数
+					continue; // 继续下一次循环,让 AI 重新响应
+				}
+
+				// 第三步:静默执行代码（不显示在界面）
+				const code = codeFragments[0].content; // 获取第一个代码块内容
+				const executionResult = await executeCode(code); // 执行代码
+
+				// 检查代码执行结果（修复:使用 errorMessage 而不是 isError）
+				if (executionResult && executionResult.errorMessage) {
+					// 代码执行失败,将错误信息发送给 AI 进行重新握手
+					const execError = new Error(`❌ 第一步握手代码执行失败,请重新执行:${executionResult.errorMessage}`);
+					console.warn(`答复错误,重新握手 (重试 ${retryCount + 1}/${maxRetries}):`, execError.message); // 记录警告日志
+					// 将错误信息作为 system 消息发送给 AI,让 AI 重新响应
+					conversationHistory.push({
+						role: 'system', // 系统角色（作为错误反馈）
+						content: execError.message, // 错误消息内容
+					}); // 添加到对话历史
+					retryCount++; // 增加重试次数
+					continue; // 继续下一次循环,让 AI 重新响应
+				}
+
 				// 第四步:静默发送执行结果给 AI
 				conversationHistory.push({
 					role: 'system', // 系统角色（作为执行结果的反馈）
-					content: `这是第一步返回的数据,请阅读后执行第二步:${JSON.stringify(executionResult)}`, // 结果消息内容
+					content: `这是第一步握手返回的数据,请阅读后执行第二步握手:${JSON.stringify(executionResult)}`, // 结果消息内容
 				}); // 添加到对话历史
 
 				// 调用 API 获取确认响应
@@ -774,16 +894,29 @@ async function ensureSystemMessage() {
 
 				// 第五步:检查响应是否包含"已理解系统定义,准备接收用户请求"
 				if (!(confirmAiResponse.includes('已理解系统定义') && confirmAiResponse.includes('准备接收用户请求'))) {
-					error = new Error('初始化失败:未收到预期的确认消息'); // 抛出错误
+					// 未收到预期的确认消息,直接抛出错误,不进行重试
+					const confirmError = new Error('初始化失败:未收到预期的确认消息,请回复"已理解系统定义,准备接收用户请求"');
+					console.error('初始化握手失败:', confirmError.message); // 记录错误日志
+					throw confirmError; // 直接抛出错误,不重试
 				}
-			}
 
+				// 初始化成功
+				initialized = true; // 标记为已初始化
+				console.log('初始化成功,系统已准备好接收用户请求'); // 输出日志
+
+			} catch (apiError) {
+				// 直接抛出,不重试
+				throw apiError; // 直接抛出错误
+			}
 		}
+
+		// 如果达到最大重试次数仍未成功,抛出错误
+		if (!initialized) {
+			throw new Error(`初始化失败:经过 ${maxRetries} 次重试后仍然失败,请检查系统消息配置或网络连接`);
+		}
+
 		// 第六步:恢复对话历史
-		if (!error) {
-			conversationHistory.push(...history);
-			console.log('初始化成功,系统已准备好接收用户请求'); // 输出日志
-		} else throw error;
+		conversationHistory.push(...history); // 恢复原始对话历史
 	}
 }
 

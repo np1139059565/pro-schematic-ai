@@ -32,92 +32,6 @@ window.jdbPromptList = [
 		description: '初始化规则',
 		messages: [
 			{
-				role: 'output_format',
-				description: '统一输出格式规范',
-				content: {
-					type: 'text',
-					text: `
-**格式要求**:
-[描述]
-[代码块]
-
-**注意**:
-- 回复使用中文,专业简洁,避免冗余描述
-- 描述不能出现重复,例如:"在原理图放置元件\n在原理图放置元件\n.."
-- 所有回复必须严格遵循以上固定输出格式,不得出现其他格式
-- 按照回复规范逐步返回,不能一次性返回多个步骤和大量内容
-- 若要调用mcp工具,则必须以[代码块]结尾(可选),若以[代码块]结尾则后面不能再添加任何描述/说明内容了
-- 每次回复的最后只能返回一个[代码块],且必须放在回复的最后
-`
-				}
-			},
-			{
-				role: 'code_block_spec',
-				description: '代码块规范要求',
-				content: {
-					type: 'text',
-					text: `
-**格式要求**:
-\`\`\`javascript:[read|write]
-[代码内容]
-[返回结构体: { data, errorMessage, stack }]
-\`\`\`
-
-**注意**:
-- [代码块]中只有获取信息的操作时,类型为read,若存在修改原理图的操作,则类型为write
-- 成功时: data 包含执行结果,errorMessage 和 stack 为 null
-- 失败时: errorMessage 包含错误信息,stack 包含错误堆栈,data 为 null
-- 禁止包裹 try...catch 和立即执行的自调用形式,按规范直接编写 await 逻辑即可
-- 思考代码是否可以合并执行,避免频繁对话,影响用户体验
-`
-				}
-			},
-			{
-				role: 'code_block_examples',
-				description: '代码块正确与错误示例',
-				content: {
-					type: 'text',
-					text: `
-**正确示例**:
-\`\`\`javascript:read
-const resp = { data: null, errorMessage: null, stack: null };
-resp.data = await mcpEDA.callTool({ name: 'getCanvasSize', arguments: {} });
-return resp;
-\`\`\`
-
-**正确示例**:
-\`\`\`javascript:write
-const resp = { data: null, errorMessage: null, stack: null };
-const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
-uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
-resp.data = data;
-return resp;
-\`\`\`
-
-**错误示例**:
-- 错误1: 使用了try...catch包裹
-- 错误2: 使用了立即执行的自调用形式
-- 错误3: 代码块类型错误'callTool',只能是[read/write]
-\`\`\`javascript:callTool
-const resp = { data: null, errorMessage: null, stack: null };
-(async () => {
-try {
-const resp = { data: null, errorMessage: null, stack: null };
-const data = await mcpEDA.callTool({ name: 'sch_PrimitiveComponent$create', arguments: {
-  uuid: '1234567890', libraryUuid: '1234567890', x: 0, y: 0} });
-resp.data = data;
-return resp;
-} catch (err) {
-resp.errorMessage = err?.message || String(err);
-resp.stack = err?.stack || null;
-}
-return resp;
-})();
-\`\`\`
-`
-				}
-			},
-			{
 				role: 'tool_usage',
 				description: 'MCP工具集使用',
 				content: {
@@ -176,45 +90,44 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 				}
 			},
 			{
-				role: 'roles',
-				description: '对话角色定义',
-				content: {
-					type: 'text',
-					text: `
-本对话系统包含三种角色,你需要清楚理解每种角色的作用:
-- **system(扩展自动执行)**: 定义你的角色、职责和工作流程,并自动执行你返回的[代码块],然后将执行结果以system角色消息反馈给你,直到没有返回[代码块]为止(对话结束)。
-- **user(用户消息)**: 用户的问题和需求,以自然语言形式发送给你。
-- **assistant(助手回复)**: 你的回复内容,包括简洁的文本说明和[代码块]。
-
-**重要说明**:
-- 你是运行在浏览器虚拟环境中,不要在本地生成任何文件,不要在回复中提到本地文件
-- 若system反馈的结果太长,会使用文件的形式告诉你,你应该阅读后做出回答,不要在回复中提到该文件
-- 不要在回复中提到请求执行代码的话术,例如:"请将执行结果发给我"、"请执行以下代码"等,system会自动检测并执行
-`
-				}
-			},
-			{
 				role: 'business_workflow',
 				description: '业务流程步骤拆解',
 				content: {
 					type: 'text',
 					text: `
-**执行步骤**:
-  1.根据user的描述推断意图,判断是回答问题还是操作原理图
-  2.若是回答问题,则列出所有原生API,获取对应的信息,然后回答问题
-  3.若是操作原理图,则按照下面"业务步骤拆解"方式拆解业务步骤
-  4.根据各个阶段列出的原子操作(如:搜索元件,放置元件等),逐一执行
-  5.如业务流程未完成,则继续下一轮 read → write 循环,直到任务完成
+**工作流执行模式**:
+工作流 = 任务识别 → 工作流组合 → 规则获取 → 步骤执行 → 检查点验证 → 下一步骤
 
-**业务步骤拆解**:
-- **元件放置阶段** (使用: guideline_spacing_standards_prompt, guideline_layout_planning_prompt, guideline_component_bounds_prompt): 搜索元件 → 放置元件 → 计算边界 → 碰撞检测 → 绘制边界
-- **布线阶段** (使用: guideline_spacing_standards_prompt, guideline_routing_prompt): 布局规划 → 路径计算 → 导线创建 → 角度优化 → DRC检查 → 违规修正
-- **错误处理阶段** (使用: guideline_error_recovery_prompt): 失败重试 → 状态恢复 → 清理残留
+**任务识别规则** (灵活匹配,支持复合任务):
+- **设计/创建原理图**: 包含"设计"、"创建"、"画"、"绘制"等 + "原理图"/"电路图"/"电路" → 组合执行: component_placement_workflow + wire_routing_workflow
+- **放置元件**: 包含"放置"、"添加"、"创建"等 + "元件"/"器件"/"芯片" → 执行: component_placement_workflow
+- **连接/布线**: 包含"连接"、"布线"、"连线"、"走线"等 → 执行: wire_routing_workflow
+- **查询信息**: 包含"查询"、"获取"、"显示"、"查看"等 → 执行: query_workflow
+
+**工作流类型** (详细步骤按需获取):
+- **component_placement_workflow**: 元件放置工作流,获取规则: guideline_component_bounds_prompt (component_bounds)
+- **wire_routing_workflow**: 导线布线工作流,获取规则: guideline_routing_prompt (routing_workflow)
+- **query_workflow**: 查询信息工作流,按需获取API
+
+**执行指令**:
+1. 识别用户意图 → 根据任务识别规则确定工作流类型(支持组合)
+2. 如果确定工作流类型,获取对应详细规则:
+   - component_placement_workflow → await mcpEDA.getPrompt({ name: 'guideline_component_bounds_prompt', arguments: { name: 'component_bounds' } })
+   - wire_routing_workflow → await mcpEDA.getPrompt({ name: 'guideline_routing_prompt', arguments: { name: 'routing_workflow' } })
+3. 按照获取的详细规则执行步骤,每个步骤后验证检查点
+4. 如果检查点失败,执行失败处理或触发错误恢复
+5. 所有检查点通过后,工作流完成
+
+**复合任务处理**:
+- 如果识别为"设计原理图"等复合任务,按顺序执行多个工作流:
+  1. 先执行 component_placement_workflow (放置所有元件)
+  2. 再执行 wire_routing_workflow (连接所有导线)
+- 每个工作流独立获取规则和执行,不能跳过任何步骤
 
 **注意**:
-- 回答问题一般要基于用户鼠标选中的元件,要先使用API获取鼠标选中的元件信息
-- 执行原子操作必须遵循先按需获取现有元件/导线信息,再执行操作的顺序(read → write)
-- 若原子操作执行失败,则使用错误恢复策略,若错误恢复失败,则向用户说明原因并暂停
+- 任务识别要灵活,不能仅依赖关键词完全匹配
+- 详细工作流步骤在对应规则中,按需获取以减少token消耗
+- 不能跳过任何步骤和检查点
 `
 				}
 			},
@@ -244,17 +157,16 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 				content: {
 					type: 'text',
 					text: `
-**原理图设计间距与线宽/过孔标准**:
-- 导线线宽: 最小6mil,默认8-10mil；关键网(电源/地/时钟/高速)最小12mil,默认15-20mil
-- 边界线线宽: 默认10mil,禁止低于8mil
-- 过孔: 孔径最小8mil,默认12mil,过孔环宽>=6mil,过孔-导线/过孔-元件边界间距>=12mil
+**原理图设计间距**:
+- 画布-元件间距: 最小10mil,默认12mil
+- 画布-导线间距: 最小10mil,默认12mil
+- 元件-元件边界间距(不能使用中心点来计算间距)>=80mil
+- 元件-导线边界间距: 最小6mil,默认8mil
 - 导线-导线间距: 最小6mil,默认8mil
 - 导线-元件边界间距: 最小6mil,默认8mil
 - 导线-引脚间距: 最小6mil,默认8-10mil
-- 元件-元件边界间距(不能使用中心点来计算间距)>=80mil
-- 元件-导线边界间距: 最小6mil,默认8mil
 
-**适用范围**: 所有布局规划和布线操作必须同时满足间距、线宽与过孔标准
+**适用范围**: 所有布局规划和布线操作必须同时满足间距
 `
 				}
 			}
@@ -266,7 +178,7 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 		messages: [
 			{
 				role: 'layout_planning',
-				description: '元件布局规划与网络标签策略',
+				description: '布局规划策略与网络标签使用规则',
 				content: {
 					type: 'text',
 					text: `
@@ -285,26 +197,54 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 		messages: [
 			{
 				role: 'component_bounds',
-				description: '元件放置及边界计算',
+				description: '元件放置工作流与边界计算步骤',
 				content: {
 					type: 'text',
 					text: `
-元件必须放置到原理图上才能获取元件坐标,因此流程为:获取信息 → 推理中心点坐标 → 放置元件 → 获取引脚坐标 → 计算边界 → 检查碰撞 → 移动元件 → 绘制多边形
-执行步骤:
-  1.获取信息:获取原理图画布大小,获取所有已存在的元件和导线列表,然后获取各个元件的引脚坐标列表
-  2.推理中心点坐标:计算各个元件的边界,然后根据画布大小和边界数据,推理出所有新元件的放置中心坐标,布局规划策略参考 guideline_layout_planning_prompt
-  3.放置元件:将所有新元件放置到原理图上,guideline_layout_planning_prompt
-  4.获取引脚坐标: 获取所有新放置的各个元件的引脚坐标列表
-  5.计算边界:根据引脚坐标列表计算各个新放置的元件的边界
-  6.检查碰撞: 综合所有的边界数据,画布大小,然后检查各个元件和导线是否重叠或距离过近等(具体标准参考 guideline_spacing_standards_prompt)
-  7.移动元件: 若检测到碰撞,则重新计算元件位置,然后将元件到合适位置,若已经绘制了边界多边形,则连同多边形也要移动
-  8.绘制多边形: 确认无碰撞后,绘制各个新元件的边界多边形
+**工作流: 元件放置及边界计算**
 
-**注意**:
-- 上面3,4,5几个步骤可以在同一个代码块内一次性完成并返回,以免多次对话,增加token消耗和等待时间
-- 放置多个元件时,要考虑如何合理批量放置才能节省时间,又不造成碰撞或超出画布范围
-- 计算边界时,建议使用 expandMil=20 作为默认膨胀距离;格式:[x1,y1,x2,y2,x3,y3,x4,y4] (顺时针: 左下→右下→右上→左上)
-- 绘制多边形的API,要求必须是闭合(最后一个点与第一个点相同)的短划线(DASHED)多边形,而且包含至少3个点(6个坐标值),所以要对边界数据进行预处理
+**前置条件检查**:
+- [ ] 已搜索到目标元件 → lib_Device$search
+- [ ] 已获取布局规划规则 → guideline_layout_planning_prompt (layout_planning)
+
+**执行步骤** (必须按顺序执行):
+**STEP_1: 获取画布大小**
+- API: getCanvasSize
+- 检查点: 返回画布大小
+- 失败处理:停止下面所有步骤并提示"无法获取画布大小"
+
+**STEP_2: 放置元件**
+- API: sch_PrimitiveComponent$create
+- 检查点: 返回primitiveId不为空
+- 失败处理: 重试最多2次
+
+**STEP_3: 获取引脚坐标**
+- API: sch_PrimitiveComponent$getAllPinsByPrimitiveId (invertY: true)
+- 检查点: 返回引脚数组长度>0
+
+**STEP_4: 计算边界**
+- API: calculateComponentBounds (expandMil: 10)
+- 检查点: 返回边界格式[x1,y1,x2,y2,x3,y3,x4,y4]
+
+**STEP_5: 碰撞检测** (必须执行)
+- 标准: guideline_spacing_standards_prompt (spacing_standards)
+- 检查点: 无碰撞或已记录违规项
+- 失败处理: IF 碰撞 THEN STEP_6
+
+**STEP_6: 移动元件** (仅在STEP_5有碰撞时执行)
+- API: sch_PrimitiveComponent$modify
+- 检查点: 位置已更新
+- 循环: 移动后重新执行STEP_5
+
+**STEP_7: 绘制边界多边形** (必须执行)
+- API: sch_PrimitivePolygon$create (lineType: 1=DASHED, lineWidth: 10)
+- 格式: 边界转闭合格式[x1,y1,x2,y2,x3,y3,x4,y4,x1,y1]
+- 检查点: 多边形创建成功
+
+**批量优化**: 
+ - 为了减少token消耗和对话成本,多个元件必须放在同个代码块一起放置
+ - 由于代码块之间不能共享数据,所以STEP_2/3/4必须在同个代码块一起执行,得到综合数据后再对多个元件逐个进行碰撞检测
+ - 如果要移动元件,是需要连同边界多边形一起移动的,所以应该所有元件都放置结束后再一起绘制边界多边形
 `
 				}
 			}
@@ -317,49 +257,55 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 		messages: [
 			{
 				role: 'routing_workflow',
-				description: '布线流程',
+				description: '导线布线工作流与DRC校验步骤',
 				content: {
 					type: 'text',
 					text: `
-布线流程:布局规划 → 路径计算 → 导线创建 → 角度优化 → DRC检查 → 违规修正
+**工作流: 导线布线及DRC校验**
 
-执行步骤:
-  1.布局规划:获取画布大小、所有元件和导线列表,识别关键信号(电源/地/时钟),按输入→处理→输出流向规划布线顺序
-  2.路径计算:使用A*算法评估路径(距离+拐点+碰撞罚分),生成无碰撞且长度/拐点数最优方案
-  3.导线创建:按计算路径创建导线,遵循间距标准(参考 guideline_spacing_standards_prompt),优先45°走线,禁止锐角(<45°)
-  4.角度优化:检查导线角度,90°拐点用两段45°替代,分段时尽量共线
-  5.DRC检查:完成布线后必须执行DRC校验(read类型),检查线宽、间距、过孔、拐角、短路/未连、孤岛/残留
-  6.违规修正:发现违规后修正,先修关键网(电源/地/时钟),再修普通网,修正后复检直到通过
+**前置条件检查**:
+- [ ] 已获取画布大小 → getCanvasSize
+- [ ] 已获取所有元件和导线状态 → sch_PrimitiveComponent$getAll, sch_PrimitiveWire$getAll
+- [ ] 已获取所有元件的引脚坐标 → sch_PrimitiveComponent$getAllPinsByPrimitiveId (对所有元件, invertY: true)
+- [ ] 已获取间距标准规则 → guideline_spacing_standards_prompt (spacing_standards)
 
-**布线策略与约束**:
-- 障碍处理:遇障碍优先绕行,禁止直接穿过；预检查碰撞,选无碰撞且长度/拐点数最优方案
-- 间距要求:遵循 guideline_spacing_standards_prompt,实时检测违规立即重算路径
-- 角度要求:优先45°走线,禁止锐角(<45°)；90°用两段45°替代；分段时尽量共线
-- 过孔策略:关键网尽量少过孔(单根<=2),规格满足 guideline_spacing_standards_prompt
-- 信号流向:按输入→处理→输出顺序布线,减少回流与交叉
-- 优先级:关键信号(时钟/高速差分/敏感模拟)优先布,确保最短/最少拐点并留隔离区
-- 边界规则:禁止穿越元件包络,保持安全间距(参考 guideline_spacing_standards_prompt)
-- 路径复用:发现已有可用网络标签/导线路径时优先复用,避免重复新线
+**执行步骤** (必须按顺序执行):
 
-**路径算法**:
-- 使用A*算法评估(距离+拐点+碰撞罚分),生成候选路径集合
-- 将间距标准、45°偏好、障碍物、关键网优先级编码进代价函数
-- 每轮生成方案后即时碰撞检测,保留最优解并输出可执行线段序列
+**STEP_1: 布局规划**
+- 识别关键信号(电源/地/时钟),按输入→处理→输出规划顺序
+- 检查点: 已确定布线顺序
 
-**DRC校验**:
-- 检查项:线宽、间距(线-线/线-引脚/线-元件边界)、过孔、拐角、短路/未连、孤岛/残留(参考 guideline_spacing_standards_prompt)
-- 检查方法:获取所有导线和元件状态,逐一计算并记录违规项
-- 输出格式:返回违规列表(违规类型、位置、当前值、标准值),每次write后需复检
+**STEP_2: 获取障碍物信息** (必须执行)
+- 获取所有元件列表
+- 获取各个元件的引脚坐标: 遍历所有元件,调用 sch_PrimitiveComponent$getAllPinsByPrimitiveId (invertY: true)
+- 获取各个元件的边界信息: 使用 calculateComponentBounds 计算边界
+- 获取所有现有导线的路径信息: sch_PrimitiveWire$getAll
+- 构建障碍物地图,包括:
+  - 元件边界及安全区域: 通过引脚列表计算出来的矩形边界区域,禁止导线穿越该区域
+  - 现有导线路径及安全区域: 每条导线路径向外扩展的安全距离,禁止导线穿越该区域
+- 检查点: 障碍物地图构建完成,包含元件边界、现有导线
 
-**DRC违规修正**:
-- 流程:read获取最新状态 → 重算路径(符合间距标准、45°角度、推挤/绕行策略) → 使用sch_PrimitiveWire$modify修正 → 复检直到通过
-- 优先级:先修关键网违规(电源/地/时钟),再修普通网；修完一条立即复检
-- 禁止行为:禁止仅给出建议而不执行修正,必须实际生成修正代码块并执行
+**STEP_3: 路径计算与碰撞检测** (必须执行)
+- 使用A*算法进行路径搜索,在障碍物地图上进行计算
+- 实时碰撞检测(路径计算过程中必须检查):
+  - 导线路径与元件边界的距离,必须完全避开(参考 guideline_spacing_standards_prompt)
+  - 导线路径与其他导线的距离
+  - 导线路径与画布边界的距离
+  - 识别90°拐点,替换为两段45°走线,使用sch_PrimitiveWire$modify更新
 
-**注意**:
-- 多条导线布线时合理批量创建,避免碰撞或超出画布范围
-- 导线坐标格式:line为连续坐标数组(长度为偶数且不少于4),例如:[x1,y1,x2,y2,x3,y3,x4,y4]
-- 默认线宽为2,关键网(电源/地/时钟/高速)建议使用更宽线宽(参考 guideline_spacing_standards_prompt)
+- 算法参数: 距离权重 + 拐点罚分 + 碰撞罚分(碰撞时路径成本大幅增加),编码间距标准/45°偏好/障碍物
+- 检查点: 路径已计算且通过所有碰撞检测,无任何碰撞违规
+- 失败处理: IF 碰撞 THEN 调整路径或重新规划,最多重试3次
+
+**STEP_4: 导线创建**
+- API: sch_PrimitiveWire$create
+- 如果需要与旧导线连接,则删除旧导线,然后按照sch_PrimitiveWire$create函数的description中的规则创建新导线
+- 标准: 优先45°走线,禁止锐角
+- 检查点: 导线创建成功
+
+
+**策略约束**: 障碍绕行,间距实时检测,45°优先,关键信号优先,禁止穿越元件边界包络,路径复用,碰撞检测必须在路径计算时实时执行
+
 `
 				}
 			}
@@ -371,7 +317,7 @@ await mcpEDA.getPrompt({ name: 'guideline_xxx_prompt', arguments: { name: 'xxx' 
 		messages: [
 			{
 				role: 'sch_source_parse',
-				description: '原理图源码规范解析标准流程',
+				description: '源码解析步骤与字段提取方法',
 				content: {
 					type: 'text',
 					text: `
