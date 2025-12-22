@@ -53,20 +53,21 @@
 		<div id="configDialog" class="config-dialog" style="display: none">
 			<div class="config-overlay"></div>
 			<div class="config-content">
-				<div class="config-header">
-					<h3>ARK API 配置</h3>
-					<button class="config-close-btn" id="configCloseBtn" title="关闭">×</button>
+			<div class="config-header">
+				<h3>ARK API 配置</h3>
+				<button class="config-close-btn" id="configCloseBtn" title="关闭">×</button>
+			</div>
+			<div class="config-body">
+				<div class="config-intro">
+					<p>为了使用 AI 助手功能，您需要配置 ARK API 的相关信息。
+						请点击<a href="#" id="privateServerLink" target="_blank" rel="noopener noreferrer">私服登录</a>后使用。
+						 </p>
 				</div>
-				<div class="config-body">
-					<div class="config-item">
-						<label for="arkApiKeyInput">ARK API Key:</label>
-						<input type="text" id="arkApiKeyInput" class="config-input" placeholder="请输入 ARK API Key" />
-					</div>
-					<div class="config-item">
-						<label for="arkModelInput">ARK Model:</label>
-						<input type="text" id="arkModelInput" class="config-input" placeholder="请输入 ARK Model" />
-					</div>
+				<div class="config-item">
+					<label for="arkApiKeyInput">ARK API Key:</label>
+					<input type="text" id="arkApiKeyInput" class="config-input" placeholder="请输入 ARK API Key" />
 				</div>
+			</div>
 				<div class="config-footer">
 					<button id="configSaveBtn" class="config-save-btn">保存</button>
 					<button id="configCancelBtn" class="config-cancel-btn">取消</button>
@@ -77,6 +78,7 @@
 		<script src="/iframe/ark-api.js"></script>
 		<!-- <script src="/iframe/cursor-cli.js"></script> -->
 		<script src="/iframe/jdb.js"></script>
+		<script src="/iframe/eda-api.js"></script>
 		<script src="/iframe/mcp-eda.js"></script>
 		<script src="/iframe/ai-chat.js"></script>
 	</body>

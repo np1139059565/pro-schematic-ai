@@ -163,8 +163,36 @@ body {
 	overflow-y: auto;
 }
 
+.config-intro {
+	margin-bottom: 20px;
+	padding: 12px;
+	background: #f0f7ff;
+	border-left: 3px solid #667eea;
+	border-radius: 4px;
+}
+
+.config-intro p {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.6;
+	color: #555;
+}
+
+.config-intro a {
+	color: #667eea;
+	text-decoration: none;
+	font-weight: 500;
+	border-bottom: 1px solid #667eea;
+	transition: all 0.2s;
+}
+
+.config-intro a:hover {
+	color: #764ba2;
+	border-bottom-color: #764ba2;
+}
+
 .config-item {
-	margin-bottom: 16px;
+	margin-bottom: 20px;
 }
 
 .config-item label {
@@ -174,6 +202,7 @@ body {
 	font-weight: 500;
 	color: #333;
 }
+
 
 .config-input {
 	width: 100%;

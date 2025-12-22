@@ -197,7 +197,10 @@ async function getPrompt(params) {
 	if (!prompt) {
 		throw new Error(`提示不存在: ${name}`);
 	}
-	const messages = prompt?.messages.filter(message => [null, undefined].includes(_args) ? true : message.role === _args.name) || [];
+	const messages = prompt?.messages.filter(message => 
+		[null, undefined].includes(_args) ? true : message.role === _args.name
+	) || [];
+	messages.map(m=>m.content.text=m.content.text.replace(/\n\s+/g, '\n'));//去除每行前面的空格
 
 	// 返回符合 MCP 规范的格式
 	return {
@@ -443,8 +446,39 @@ async function sch_PrimitiveComponent$create({ uuid, libraryUuid, x, y, subPartN
 		addIntoBom,
 		addIntoPcb,
 	);
-	await comp.done();
 	return { content: comp };
+}
+
+/**
+ * 批量在原理图放置元件（必须使用设备 uuid,subPartName 必填即便为空字符串）
+ */
+async function sch_PrimitiveComponent$createBatch({ components }) {
+	if (!Array.isArray(components) || components.length === 0) {
+		throw new Error('components 必填且必须为非空数组');
+	}
+	
+	// 批量调用单个函数
+	const results = [];
+	for (let i = 0; i < components.length; i++) {
+		const comp = components[i];
+		try {
+			const result = await sch_PrimitiveComponent$create({
+				uuid: comp.uuid,
+				libraryUuid: comp.libraryUuid,
+				x: comp.x,
+				y: comp.y,
+				subPartName: comp.subPartName,
+				rotation: comp.rotation,
+				mirror: comp.mirror,
+				addIntoBom: comp.addIntoBom,
+				addIntoPcb: comp.addIntoPcb,
+			});
+			results.push(result.content);
+		} catch (error) {
+			throw new Error(`components[${i}]: ${error.message}`);
+		}
+	}
+	return { content: results };
 }
 
 /**
@@ -481,6 +515,27 @@ async function sch_PrimitiveComponent$getAllPinsByPrimitiveId({ primitiveId, inv
 }
 
 /**
+ * 批量获取多个元件的引脚列表,可选 y 轴取反
+ * 返回格式：{ [primitiveId]: pins[] }
+ */
+async function sch_PrimitiveComponent$getAllPinsByPrimitiveIdBatch({ primitiveIds, invertY = true }) {
+	if (!Array.isArray(primitiveIds) || primitiveIds.length === 0) {
+		throw new Error('primitiveIds 必填且必须为非空数组');
+	}
+	
+	// 批量调用单个函数
+	const results = {};
+	for (const primitiveId of primitiveIds) {
+		if (!primitiveId) {
+			throw new Error('primitiveIds 中的每个元素不能为空');
+		}
+		const result = await sch_PrimitiveComponent$getAllPinsByPrimitiveId({ primitiveId, invertY });
+		results[primitiveId] = result.content;
+	}
+	return { content: results };
+}
+
+/**
  * 修改原理图元件（支持位置、旋转、镜像、属性等完整修改）
  */
 async function sch_PrimitiveComponent$modify({ primitiveId, property }) {
@@ -493,7 +548,7 @@ async function sch_PrimitiveComponent$modify({ primitiveId, property }) {
 	const canvasSize = await getCanvasSize();
 	const canvasWidth = canvasSize.content.width.value;
 	const canvasHeight = canvasSize.content.height.value;
-	if(x < 0 || x > canvasWidth || y < 0 || y > canvasHeight) {
+	if(property.x < 0 || property.x > canvasWidth || property.y < 0 || property.y > canvasHeight) {
 		throw new Error('x,y不能超过画布边界');
 	}
 	const comp = await eda.sch_PrimitiveComponent.modify(primitiveId, property);
@@ -522,6 +577,37 @@ async function sch_PrimitiveWire$create({ line, net = null, color = '#000000', l
 	}
 	const wire = await eda.sch_PrimitiveWire.create(line, net, color, lineWidth, lineType);
 	return { content: wire };
+}
+
+/**
+ * 批量创建原理图导线
+ * @param {Object} params 参数对象
+ * @param {Array} params.wires 导线数组,每个元素格式：{line: Array<number>, net?: string, color?: string, lineWidth?: number, lineType?: number}
+ * @returns {Object} 返回格式: { content: Array } 创建的导线对象数组
+ */
+async function sch_PrimitiveWire$createBatch({ wires }) {
+	if (!Array.isArray(wires) || wires.length === 0) {
+		throw new Error('wires 必填且必须为非空数组');
+	}
+	
+	// 批量调用单个函数
+	const results = [];
+	for (let i = 0; i < wires.length; i++) {
+		const wire = wires[i];
+		try {
+			const result = await sch_PrimitiveWire$create({
+				line: wire.line,
+				net: wire.net,
+				color: wire.color,
+				lineWidth: wire.lineWidth,
+				lineType: wire.lineType,
+			});
+			results.push(result.content);
+		} catch (error) {
+			throw new Error(`wires[${i}]: ${error.message}`);
+		}
+	}
+	return { content: results };
 }
 
 /**
@@ -593,6 +679,37 @@ async function sch_PrimitivePolygon$create({ line, color = null, fillColor = nul
 	const polygon = await eda.sch_PrimitivePolygon.create(line, color, fillColor, lineWidth, lineType);
 	// 返回统一的 content 包装
 	return { content: polygon };
+}
+
+/**
+ * 批量创建原理图多边形
+ * @param {Object} params 参数对象
+ * @param {Array} params.boundsList 边界数组,每个元素格式：{line: Array<number>, color?: string|null, fillColor?: string|null, lineWidth?: number|null, lineType?: number|null}
+ * @returns {Object} 返回格式: { content: Array } 创建的多边形对象数组
+ */
+async function sch_PrimitivePolygon$createBatch({ boundsList }) {
+	if (!Array.isArray(boundsList) || boundsList.length === 0) {
+		throw new Error('boundsList 必填且必须为非空数组');
+	}
+	
+	// 批量调用单个函数
+	const results = [];
+	for (let i = 0; i < boundsList.length; i++) {
+		const bounds = boundsList[i];
+		try {
+			const result = await sch_PrimitivePolygon$create({
+				line: bounds.line,
+				color: bounds.color,
+				fillColor: bounds.fillColor,
+				lineWidth: bounds.lineWidth,
+				lineType: bounds.lineType,
+			});
+			results.push(result.content);
+		} catch (error) {
+			throw new Error(`boundsList[${i}]: ${error.message}`);
+		}
+	}
+	return { content: results };
 }
 
 // 删除原理图多边形
@@ -676,178 +793,107 @@ async function calculateComponentBounds({ pins, expandMil = 10 }) {
 }
 
 /**
- * 获取工作流程指导
- * @returns {Object} 返回格式: { content: { guidelines: Array } }
+ * 批量计算多个原理图元件的矩形边界
+ * @param {Object} params 参数对象
+ * @param {Array<Array>} params.pinsList 多个元件的引脚坐标列表数组,每个元素格式：[{x: number, y: number}, ...]
+ * @param {number} params.expandMil 引脚膨胀距离（默认10mil）
+ * @returns {Object} 返回格式: { content: Array } 边界数组,每个元素格式：[x1,y1,x2,y2,x3,y3,x4,y4]（顺时针顺序：左下、右下、右上、左上）
  */
-async function getWorkflowGuidelines() {
-	return {
-		content: {
-			guidelines: [
-				{
-					step: 1,
-					name: '需求分析',
-					description: '仔细分析用户需求,理解真实意图,识别关键信息'
-				},
-				{
-					step: 2,
-					name: '业务流程转换',
-					description: '将需求转换为专业流程,规划操作步骤,识别需要遵循的规范'
-				},
-				{
-					step: 3,
-					name: '数据获取',
-					description: '获取当前原理图状态和所有相关规范'
-				},
-				{
-					step: 4,
-					name: '工具查找',
-					description: '根据业务流程查找需要的API工具'
-				},
-				{
-					step: 5,
-					name: '逐步执行',
-					description: '按照规划的业务流程一步步执行操作'
-				},
-				{
-					step: 6,
-					name: 'DRC验证',
-					description: '执行DRC验证,修正所有违规,确保符合规范'
-				}
-			]
-		}
-	};
+async function calculateComponentBoundsBatch({ pinsList, expandMil = 10 }) {
+	if (!Array.isArray(pinsList) || pinsList.length === 0) {
+		throw new Error('pinsList 必填且必须为非空数组');
+	}
+	
+	// 批量调用单个函数
+	const results = [];
+	for (const pins of pinsList) {
+		const result = await calculateComponentBounds({ pins, expandMil });
+		results.push(result.content);
+	}
+	return { content: results };
+}
+
+/**查询所有已选中图元的图元对象
+ * @returns {Object} 返回格式: { content: Array } 图元对象列表,格式：[{primitiveId: string, x: number, y: number, rotation: number, mirror: boolean, addIntoBom: boolean, addIntoPcb: boolean, designator: string|null, name: string|null, uniqueId: string|null, manufacturer: string|null, manufacturerId: string|null, supplier: string|null, supplierId: string|null, otherProperty: {[key:string]:string|number|boolean}}]
+ */
+async function sch_SelectControl$getAllSelectedPrimitives() {
+	const result = await eda.sch_SelectControl.getAllSelectedPrimitives();
+	return { content: result };
 }
 
 /**
- * 获取所有规范提示
- * @returns {Object} 返回格式: { content: { guidelines: Array } }
+ * 使用图元 ID 选中图元
+ * @param {Object} params 参数对象
+ * @param {string|Array<string>} params.primitiveIds 图元 ID，可以是单个ID或ID数组
+ * @returns {Object} 返回格式: { content: any } 选择操作结果
  */
-async function getAllGuidelines() {
-	try {
-		// 获取所有提示列表
-		const prompts = window.mcpEDA.listPrompts();
-		
-		// 获取每个提示的详细内容
-		const guidelines = [];
-		for (const prompt of prompts.prompts) {
-			try {
-				const promptDetail = await window.mcpEDA.getPrompt({ name: prompt.name });
-				guidelines.push({
-					name: prompt.name,
-					description: prompt.description,
-					content: promptDetail.messages.map(m => m.content.text).join('\n')
-				});
-			} catch (e) {
-				console.warn(`获取提示 ${prompt.name} 失败:`, e);
-			}
-		}
-		
-		return {
-			content: {
-				guidelines: guidelines
-			}
-		};
-	} catch (error) {
-		console.error('获取所有规范失败:', error);
-		return {
-			content: {
-				guidelines: [],
-				error: error.message
-			}
-		};
+async function sch_SelectControl$doSelectPrimitives({ primitiveIds }) {
+	if (!primitiveIds) {
+		throw new Error('primitiveIds 必填');
 	}
+	const result = await eda.sch_SelectControl.doSelectPrimitives(primitiveIds);
+	return { content: result };
 }
 
 /**
- * 获取当前原理图数据
- * @returns {Object} 返回格式: { content: { canvasSize: Object, components: Array, wires: Array } }
+ * 清除选中状态
+ * @returns {Object} 返回格式: { content: any } 清除操作结果
  */
-async function getCurrentSchematicData() {
-	try {
-		// 获取画布大小
-		const canvasSizeResult = await getCanvasSize();
-		const canvasSize = canvasSizeResult.content;
-		
-		// 获取所有元件
-		const componentsResult = await sch_PrimitiveComponent$getAll({});
-		const components = componentsResult.content || [];
-		
-		// 获取所有导线
-		const wiresResult = await sch_PrimitiveWire$getAll({});
-		const wires = wiresResult.content || [];
-		
-		return {
-			content: {
-				canvasSize: canvasSize,
-				components: components,
-				wires: wires,
-				summary: {
-					canvasWidth: canvasSize.width.value,
-					canvasHeight: canvasSize.height.value,
-					componentCount: components.length,
-					wireCount: wires.length
-				}
-			}
-		};
-	} catch (error) {
-		console.error('获取当前原理图数据失败:', error);
-		return {
-			content: {
-				error: error.message
-			}
-		};
-	}
+async function sch_SelectControl$clearSelected() {
+	const result = await eda.sch_SelectControl.clearSelected();
+	return { content: result };
 }
+
+/**
+ * 获取当前鼠标在画布上的位置
+ * @returns {Object} 返回格式: { content: { x: number, y: number } } 鼠标位置坐标
+ */
+async function sch_SelectControl$getCurrentMousePosition() {
+	const result = await eda.sch_SelectControl.getCurrentMousePosition();
+	return { content: result };
+}
+
+/**
+ * 缩放到已选中图元（适应选中）
+ * @param {Object} params 参数对象
+ * @param {string} params.tabId 标签页 ID，如若未传入，则为最后输入焦点的画布（可选）
+ * @returns {Object} 返回格式: { content: any } 缩放操作结果
+ */
+async function dmt_EditorControl$zoomToSelectedPrimitives({ tabId = null }) {
+	const result = await eda.dmt_EditorControl.zoomToSelectedPrimitives(tabId);
+	return { content: result };
+}
+
 
 window.customeTools = {
-	searchTools,
-	getCanvasSize,
-	lib_Device$search,
-	sch_PrimitiveComponent$create,
-	sch_PrimitiveComponent$getAllPinsByPrimitiveId,
-	sch_PrimitiveComponent$getAll,
-	sch_PrimitiveComponent$modify,
-	sch_PrimitiveComponent$delete,
-	calculateComponentBounds,
-	sch_PrimitiveWire$create,
-	sch_PrimitiveWire$modify,
-	sch_PrimitiveWire$delete,
-	sch_PrimitiveWire$getAll,
-	sch_PrimitivePolygon$create,
-	sch_PrimitivePolygon$delete,
-	sch_PrimitivePolygon$getAll,
-	sys_FileManager$getDocumentFootprintSources,
-	getWorkflowGuidelines,
-	getAllGuidelines,
-	getCurrentSchematicData,
+	searchTools,//搜索原生API列表
+	getCanvasSize,//获取图纸边界(画布大小)
+	lib_Device$search,//元件搜索
+	sch_PrimitiveComponent$create,//在原理图放置单个元件
+	sch_PrimitiveComponent$createBatch,//批量在原理图放置元件
+	sch_PrimitiveComponent$getAllPinsByPrimitiveId,//获取单个元件的引脚列表
+	sch_PrimitiveComponent$getAllPinsByPrimitiveIdBatch,//批量获取引脚坐标
+	sch_PrimitiveComponent$getAll,//获取当前原理图中的所有元件列表
+	sch_PrimitiveComponent$modify,//修改原理图元件
+	sch_PrimitiveComponent$delete,//删除原理图元件
+	calculateComponentBounds,//计算原理图元件的矩形边界
+	calculateComponentBoundsBatch,//批量计算多个原理图元件的矩形边界
+	sch_PrimitiveWire$create,//在原理图放置单条导线
+	sch_PrimitiveWire$createBatch,//批量在原理图放置导线
+	sch_PrimitiveWire$modify,//修改原理图导线
+	sch_PrimitiveWire$delete,//删除原理图导线
+	sch_PrimitiveWire$getAll,//获取当前原理图中的所有导线列表
+	sch_PrimitivePolygon$create,//在原理图放置多边形
+	sch_PrimitivePolygon$createBatch,//批量在原理图放置多边形
+	sch_PrimitivePolygon$delete,//删除原理图多边形
+	sch_PrimitivePolygon$getAll,//获取全部原理图多边形
+	sys_FileManager$getDocumentFootprintSources,//获取文档中所有封装的源码信息
+	sch_SelectControl$getAllSelectedPrimitives,//查询所有已选中图元的图元对象
+	sch_SelectControl$doSelectPrimitives,//使用图元 ID 选中图元
+	sch_SelectControl$clearSelected,//清除选中状态
+	sch_SelectControl$getCurrentMousePosition,//获取当前鼠标在画布上的位置
+	dmt_EditorControl$zoomToSelectedPrimitives,//缩放到已选中图元（适应选中）
 	toolDescriptions: [
-		{
-			name: 'getWorkflowGuidelines',
-			description: '获取6步工作流程指导,帮助AI按照标准流程执行任务',
-			inputSchema: {
-				type: 'object',
-				properties: {},
-				required: []
-			}
-		},
-		{
-			name: 'getAllGuidelines',
-			description: '获取所有规范提示(间距标准/布线策略/DRC规则等),用于在执行操作前了解所有相关规范',
-			inputSchema: {
-				type: 'object',
-				properties: {},
-				required: []
-			}
-		},
-		{
-			name: 'getCurrentSchematicData',
-			description: '获取当前原理图的完整数据,包括画布大小、所有元件列表、所有导线列表,用于在执行操作前了解当前原理图状态',
-			inputSchema: {
-				type: 'object',
-				properties: {},
-				required: []
-			}
-		},
 		{
 			name: 'searchTools',
 			description: `
@@ -869,7 +915,11 @@ window.customeTools = {
 		},
 		{
 			name: 'getCanvasSize',
-			description: '获取图纸边界(画布大小);所有元件/导线不能超过该范围,单位:mil)',
+			description: `
+获取图纸边界(画布大小);
+所有元件/导线不能超过该范围;
+单位:mil;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {},
@@ -878,7 +928,11 @@ window.customeTools = {
 		},
 		{
 			name: 'lib_Device$search',
-			description: '元件搜索;带分页参数(itemsOfPage/page)时必须提供 libraryUuid;返回 lib_Device.search 结果',
+			description: `
+元件搜索;
+带分页参数(itemsOfPage/page)时必须提供 libraryUuid;
+返回 lib_Device.search 结果;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -892,7 +946,11 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$create',
-			description: `在原理图放置元件;x,y不能超过画布边界`,
+			description: `
+在原理图放置单个元件;
+x,y不能超过画布边界;
+如果有多个元件要放置,强烈建议使用 sch_PrimitiveComponent$createBatch 批量操作以提高效率;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -910,8 +968,43 @@ window.customeTools = {
 			},
 		},
 		{
+			name: 'sch_PrimitiveComponent$createBatch',
+			description: `
+批量在原理图放置元件;
+x,y不能超过画布边界;
+如果有多个元件要放置,必须使用此批量操作而不是逐个调用 sch_PrimitiveComponent$create;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					components: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								uuid: { type: 'string' },
+								libraryUuid: { type: 'string' },
+								x: { type: 'number' },
+								y: { type: 'number' },
+								subPartName: { type: 'string' },
+								rotation: { type: 'number' },
+								mirror: { type: 'boolean' },
+								addIntoBom: { type: 'boolean' },
+								addIntoPcb: { type: 'boolean' },
+							},
+							required: ['uuid', 'libraryUuid', 'x', 'y']
+						}
+					},
+				},
+				required: ['components'],
+			},
+		},
+		{
 			name: 'sch_PrimitiveComponent$getAll',
-			description: '获取当前原理图中的所有元件列表;可选 cmdKey（筛选条件）和 allSchematicPages（是否获取所有页面）',
+			description: `
+获取当前原理图中的所有元件列表;
+可选 cmdKey（筛选条件）和 allSchematicPages（是否获取所有页面）;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -923,7 +1016,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$delete',
-			description: '删除原理图元件;primitiveIds可以是单个图元ID(string)或图元ID数组(Array<string>)',
+			description: `
+删除原理图元件;
+primitiveIds可以是单个图元ID(string)或图元ID数组(Array<string>);
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -940,19 +1036,44 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveComponent$getAllPinsByPrimitiveId',
-			description: '获取元件引脚列表;默认对 y 轴取反以符合画布坐标习惯,可通过 invertY 控制',
+			description: `
+获取单个元件的引脚列表;
+如果有多个元件要获取引脚坐标,强烈建议使用 sch_PrimitiveComponent$getAllPinsByPrimitiveIdBatch 批量操作以提高效率;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
 					primitiveId: { type: 'string' },
-					invertY: { type: 'boolean' },
+					// invertY: { type: 'boolean' },
 				},
 				required: ['primitiveId'],
 			},
 		},
 		{
+			name: 'sch_PrimitiveComponent$getAllPinsByPrimitiveIdBatch',
+			description: `
+批量获取多个元件的引脚列表;
+返回格式：{ [primitiveId]: pins[] };
+如果有多个元件要获取引脚坐标,必须使用此批量操作而不是逐个调用 sch_PrimitiveComponent$getAllPinsByPrimitiveId;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					primitiveIds: {
+						type: 'array',
+						items: { type: 'string' }
+					},
+					invertY: { type: 'boolean' },
+				},
+				required: ['primitiveIds'],
+			},
+		},
+		{
 			name: 'sch_PrimitiveComponent$modify',
-			description: `修改原理图元件;x,y不能超过画布边界`,
+			description: `
+修改原理图元件;
+x,y不能超过画布边界;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -987,9 +1108,10 @@ window.customeTools = {
 		{
 			name: 'calculateComponentBounds',
 			description: `
-计算原理图元件的矩形边界;
-根据元件的引脚坐标列表计算元件的最小外接矩形,支持引脚膨胀距离设置;
+计算单个原理图元件的矩形边界;
+根据元件的引脚坐标列表计算元件的最小外接矩形,支持引脚膨胀距离设置(expandMil);
 返回矩形边界顶点坐标数组（顺时针顺序：左下、右下、右上、左上）,格式：[x1,y1,x2,y2,x3,y3,x4,y4];
+如果有多个元件要计算边界,强烈建议使用 calculateComponentBoundsBatch 批量操作以提高效率;
 `,
 			inputSchema: {
 				type: 'object',
@@ -1011,8 +1133,43 @@ window.customeTools = {
 			},
 		},
 		{
+			name: 'calculateComponentBoundsBatch',
+			description: `
+批量计算多个原理图元件的矩形边界;
+根据多个元件的引脚坐标列表数组计算每个元件的最小外接矩形,支持引脚膨胀距离设置(expandMil);
+返回边界数组,每个元素格式：[x1,y1,x2,y2,x3,y3,x4,y4]（顺时针顺序：左下、右下、右上、左上）;
+如果有多个元件要计算边界,必须使用此批量操作而不是逐个调用 calculateComponentBounds;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					pinsList: {
+						type: 'array',
+						items: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									x: { type: 'number' },
+									y: { type: 'number' }
+								},
+								required: ['x', 'y']
+							}
+						}
+					},
+					expandMil: { type: 'number' }
+				},
+				required: ['pinsList']
+			},
+		},
+		{
 			name: 'sch_PrimitiveWire$create',
-			description: `创建原理图导线;line参数必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4];x,y不能超过画布边界`,
+			description: `
+创建单条原理图导线;
+line参数必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4];
+x,y不能超过画布边界;
+如果有多条导线要创建,强烈建议使用 sch_PrimitiveWire$createBatch 批量操作以提高效率;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1026,8 +1183,40 @@ window.customeTools = {
 			},
 		},
 		{
+			name: 'sch_PrimitiveWire$createBatch',
+			description: `
+批量创建多条原理图导线;
+line参数必须为连续坐标数组（长度为偶数且不少于4）,例如:[x1,y1,x2,y2,x3,y3,x4,y4];
+x,y不能超过画布边界;
+如果有多条导线要创建,必须使用此批量操作而不是逐个调用 sch_PrimitiveWire$create;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					wires: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								line: { type: 'array', items: { type: 'number' } },
+								net: { type: 'string' },
+								color: { type: 'string' },
+								lineWidth: { type: 'number' },
+								lineType: { type: 'number' },
+							},
+							required: ['line']
+						}
+					},
+				},
+				required: ['wires'],
+			},
+		},
+		{
 			name: 'sch_PrimitiveWire$delete',
-			description: '删除原理图导线;primitiveIds可以是单个图元ID(string)或图元ID数组(Array<string>)',
+			description: `
+删除原理图导线;
+primitiveIds可以是单个图元ID(string)或图元ID数组(Array<string>);
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1044,7 +1233,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveWire$modify',
-			description: `修改原理图导线;x,y不能超过画布边界`,
+			description: `
+修改原理图导线;
+x,y不能超过画布边界;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1074,7 +1266,11 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitiveWire$getAll',
-			description: '获取所有原理图导线;可选net参数（网络名称）进行筛选,net可以是单个网络名称(string)或网络名称数组(Array<string>)',
+			description: `
+获取所有原理图导线;
+可选net参数（网络名称）进行筛选;
+net可以是单个网络名称(string)或网络名称数组(Array<string>);
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1091,7 +1287,12 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitivePolygon$create',
-			description: `创建多边形;line参数必须为连续坐标数组（长度为偶数且不少于8,至少4点）,x,y不能超过画布边界;lineType是数字或者ESCH_PrimitiveLineType.xxx这种格式,禁止添加引号`,
+			description: `
+创建单个多边形;
+line参数必须为连续坐标数组（长度为偶数且不少于8,至少4点）;
+x,y不能超过画布边界;
+如果有多个边界要绘制,强烈建议使用 sch_PrimitivePolygon$createBatch 批量操作以提高效率;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1109,8 +1310,44 @@ window.customeTools = {
 			},
 		},
 		{
+			name: 'sch_PrimitivePolygon$createBatch',
+			description: `
+批量创建多个多边形;
+line参数必须为连续坐标数组（长度为偶数且不少于8,至少4点）;
+x,y不能超过画布边界;
+如果有多个边界要绘制,必须使用此批量操作而不是逐个调用 sch_PrimitivePolygon$create;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					boundsList: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								line: { type: 'array', items: { type: 'number' } },
+								color: { type: ['string', 'null'] },
+								fillColor: { type: ['string', 'null'] },
+								lineWidth: { type: ['number', 'null'] },
+								lineType: { 
+									type: 'number', 
+									enum: [0,1,2,3], 
+									description: '线型,0:实线,1:虚线,2:点划线,3:点线'
+								}
+							},
+							required: ['line']
+						}
+					},
+				},
+				required: ['boundsList'],
+			},
+		},
+		{
 			name: 'sch_PrimitivePolygon$delete',
-			description: '删除多边形;primitiveIds 可以是单个 ID 或 ID 数组',
+			description: `
+删除多边形;
+primitiveIds 可以是单个 ID 或 ID 数组;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -1127,7 +1364,10 @@ window.customeTools = {
 		},
 		{
 			name: 'sch_PrimitivePolygon$getAll',
-			description: '获取全部多边形;无参数',
+			description: `
+获取全部多边形;
+无参数;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {},
@@ -1136,10 +1376,87 @@ window.customeTools = {
 		},
 		{
 			name: 'sys_FileManager$getDocumentFootprintSources',
-			description: '获取文档中所有封装的源码信息;返回封装UUID和对应的文档源码字符串;',
+			description: `
+获取文档中所有封装的源码信息;
+返回封装UUID和对应的文档源码字符串;
+`,
 			inputSchema: {
 				type: 'object',
 				properties: {},
+				required: [],
+			},
+		},
+		{
+			name: 'sch_SelectControl$getAllSelectedPrimitives',
+			description: `
+查询所有已选中图元的图元对象;
+返回图元对象列表,包含完整属性信息;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {},
+				required: [],
+			},
+		},
+		{
+			name: 'sch_SelectControl$doSelectPrimitives',
+			description: `
+使用图元 ID 选中图元;
+primitiveIds可以是单个图元ID(string)或图元ID数组(Array<string>);
+用于主动选择指定的图元;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					primitiveIds: {
+						oneOf: [
+							{ type: 'string' },
+							{ type: 'array', items: { type: 'string' } }
+						],
+						description: '图元 ID，可以是单个ID或ID数组'
+					}
+				},
+				required: ['primitiveIds']
+			},
+		},
+		{
+			name: 'sch_SelectControl$clearSelected',
+			description: `
+清除所有选中状态;
+无参数;
+用于取消当前所有图元的选择;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {},
+				required: [],
+			},
+		},
+		{
+			name: 'sch_SelectControl$getCurrentMousePosition',
+			description: `
+获取当前鼠标在画布上的位置;
+返回鼠标的x,y坐标;
+用于感知用户鼠标位置,实现交互功能;
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {},
+				required: [],
+			},
+		},
+		{
+			name: 'dmt_EditorControl$zoomToSelectedPrimitives',
+			description: `
+缩放到已选中图元（适应选中）;
+用于将视图缩放到选中图元的位置,提供交互反馈;
+tabId:标签页ID,如若未传入,则为最后输入焦点的画布(可选);
+`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					tabId: { type: 'string', description: '标签页 ID，如若未传入，则为最后输入焦点的画布' }
+				},
 				required: [],
 			},
 		},

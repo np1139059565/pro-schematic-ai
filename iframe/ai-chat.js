@@ -16,7 +16,6 @@ let configCloseBtn; // 配置关闭按钮
 let configSaveBtn; // 配置保存按钮
 let configCancelBtn; // 配置取消按钮
 let arkApiKeyInput; // ARK API Key 输入框
-let arkModelInput; // ARK Model 输入框
 let autoExecWriteCheckbox; // 自动执行复选框
 let autoExecWriteEnabled = false; // 自动执行开关（默认关闭）
 
@@ -24,6 +23,7 @@ let autoExecWriteEnabled = false; // 自动执行开关（默认关闭）
 let conversationHistory = []; // 存储所有对话消息,格式: [{role: 'user', content: '...'}, {role: 'assistant', content: '...'}]
 let previousResponseId = null; // 上一轮响应的ID（用于多轮对话）
 let isStop = false; // 是否停止
+let totalTokensAccumulated = 0; // 累加多轮对话的 total_tokens
 
 // 界面状态枚举
 const UI_STATE = {
@@ -37,52 +37,7 @@ let currentUIState = UI_STATE.IDLE; // 当前界面状态
 
 
 // 系统消息 - 用于描述 AI 角色和职责,用户可以在控制台临时修改系统消息,对ai助手进行定制化
-window.top.systemMessage = `
-角色:你是兼具10年嘉立创EDA（标准版+专业版）实操经验和原理图业界规范知识的专家。
-精通嘉立创EDA原理图全流程操作,熟悉其快捷键、复用图块、网表对比等特色功能;同时吃透IPC绘图规范、电源与接地等业界电气规则,能解决原理图设计中的操作与合规性双重问题。
-
-**工作流程规范（必须严格遵循）**:
-你必须按照以下6个步骤执行每个任务:
-
-1. **需求分析阶段**:
-   - 仔细分析用户的需求,理解用户的真实意图
-   - 识别需求中的关键信息:元件类型、数量、位置、连接关系等
-   - 明确任务的复杂度和涉及的操作类型(布局/布线/修改等)
-
-2. **业务流程转换阶段**:
-   - 将用户需求转换为专业的原理图设计流程
-   - 规划操作步骤:先做什么,后做什么
-   - 识别需要遵循的规范(间距标准/布线策略/DRC规则等)
-   - 使用 getWorkflowGuidelines 工具获取工作流程指导(如需要)
-
-3. **数据获取阶段**:
-   - 使用 getCurrentSchematicData 工具获取当前原理图状态(画布大小/元件列表/导线列表)
-   - 使用 getAllGuidelines 工具获取所有相关规范(间距标准/布线策略/DRC规则等)
-   - 确保在操作前了解完整的上下文信息
-
-4. **工具查找阶段**:
-   - 根据业务流程,使用 searchTools 工具查找需要的API
-   - 优先使用自定义工具(如 sch_PrimitiveComponent$create),其次使用原生API
-   - 确认工具的参数和返回值格式
-
-5. **逐步执行阶段**:
-   - 按照规划的业务流程,一步步执行操作
-   - 每执行一个操作,检查执行结果
-   - 如果操作失败,分析原因并调整策略
-   - 确保每个操作都符合规范要求
-
-6. **DRC验证阶段**:
-   - 完成所有操作后,必须执行DRC验证
-   - 获取所有导线和元件状态,检查间距、线宽、角度等
-   - 如果发现违规,必须立即修正,不能仅报告违规
-   - 修正后再次执行DRC验证,直到无违规为止
-
-**重要提醒**:
-- 每个任务都必须完整执行这6个步骤,不能跳过任何步骤
-- 在执行操作前,必须先获取当前原理图数据和相关规范
-- 完成操作后,必须执行DRC验证并修正所有违规
-- 如果任务复杂,可以分阶段执行,但每个阶段都要遵循这6个步骤
-`;
+window.top.systemMessage = window.jdbPromptList.find(prompt => prompt.name === 'system_message').messages[0].content.text;
 // 初始化函数
 function init() {
 	// 获取 DOM 元素
@@ -98,7 +53,6 @@ function init() {
 	configSaveBtn = document.getElementById('configSaveBtn');
 	configCancelBtn = document.getElementById('configCancelBtn');
 	arkApiKeyInput = document.getElementById('arkApiKeyInput');
-	arkModelInput = document.getElementById('arkModelInput');
 	autoExecWriteCheckbox = document.getElementById('autoExecWriteCheckbox'); // 获取自动执行复选框
 
 	// 绑定事件监听器
@@ -133,6 +87,7 @@ function init() {
 
 	// 加载配置
 	loadConfig(); // 从 localStorage 加载配置
+	setupPrivateServerLink(); // 设置私服链接
 
 	// 设置初始状态
 	updateUIState(UI_STATE.IDLE); // 初始化界面状态
@@ -189,25 +144,17 @@ function updateUIState(state) {
 }
 
 
-/**
- * 添加用户消息到对话历史
- * @param message - 用户消息内容
- */
-function addUserMessageToHistory(message) {
-	conversationHistory.push({
-		role: 'user', // 用户角色
-		content: message, // 用户消息内容
-	}); // 添加到对话历史
-}
 
 /**
  * 添加AI回复到对话历史
- * @param content - AI回复内容
+ * @param {Object} message - 消息对象
+ * @param {Array} toolCalls - 工具调用数组
  */
-function addAssistantMessageToHistory(content) {
+function addAssistantMessageToHistory(message, toolCalls) {
 	conversationHistory.push({
 		role: 'assistant', // AI角色
-		content: content, // AI回复内容
+		content: message, // AI回复内容
+		toolCalls: toolCalls, // 工具调用信息
 	}); // 添加到对话历史
 }
 
@@ -263,7 +210,7 @@ function updatePreviousResponseId(responseId) {
 }
 
 /**
- * 提取消息内容（从parseAIResponse拆分）
+ * 提取消息内容
  * @param {Object} item - 消息项
  * @returns {string} 消息内容
  */
@@ -282,7 +229,7 @@ function extractMessageContent(item) {
 }
 
 /**
- * 提取工具调用（从parseAIResponse拆分）
+ * 提取工具调用
  * @param {Object} item - 工具调用项
  * @returns {Object} 工具调用对象
  */
@@ -307,7 +254,6 @@ function parseAIResponse(response) {
 	// 解析 AI 回复
 	let aiResponse = ''; // AI 回复内容
 	let toolCalls = null; // 工具调用信息
-	let messageObj = null; // 消息对象
 
 	if (response && response.output && Array.isArray(response.output)) {
 		// Responses API格式:解析output数组
@@ -317,7 +263,6 @@ function parseAIResponse(response) {
 		for (const item of output) {
 			if (item.type === 'message' && item.role === 'assistant') {
 				// 找到助手消息
-				messageObj = item; // 保存消息对象
 				aiResponse = extractMessageContent(item); // 提取消息内容
 			} else if (item.type === 'function_call') {
 				// 找到工具调用
@@ -340,7 +285,6 @@ function parseAIResponse(response) {
 	return {
 		content: aiResponse, // 回复内容
 		toolCalls: toolCalls, // 工具调用信息
-		message: messageObj, // 完整消息对象
 		responseId: response?.id, // 响应ID
 	}; // 返回解析结果
 }
@@ -467,19 +411,20 @@ async function callAIAndHandleResponse(loadingId) {
 
 	// 确保系统消息在对话历史中
 	const isAddTool = ensureSystemMessage(); // 确保系统消息存在
-
 	// 调用 AI API（使用Responses API,传入previous_response_id进行多轮对话）
 	const response = await window.ArkAPI.callArkChat(conversationHistory, previousResponseId,
 		isAddTool ? window.mcpEDA.toolDescriptions : null); // 调用 ARK API
 
+	// 累加 total_tokens
+	totalTokensAccumulated += response.usage.total_tokens; // 累加 tokens
+	console.info(`total_tokens累计: ${totalTokensAccumulated}`, 'history', conversationHistory);//打印对话历史和累计tokens
+
 	// 解析 AI 回复
 	const parsedResponse = parseAIResponse(response); // 解析响应
+	addAssistantMessageToHistory(parsedResponse.content, parsedResponse.toolCalls); // 添加到对话历史
 
 	// 更新上一轮响应ID（使用公共函数）
 	updatePreviousResponseId(parsedResponse.responseId); // 更新响应ID
-
-	// 获取消息对象
-	const message = parsedResponse.message; // 获取消息对象
 
 	// 如果有内容,添加到界面和历史
 	if (parsedResponse.content) {
@@ -488,9 +433,6 @@ async function callAIAndHandleResponse(loadingId) {
 
 		// 添加 AI 回复到界面
 		addMessageToChat('assistant', parsedResponse.content); // 添加 AI 回复
-
-		// 将 AI 回复添加到对话历史（用于本地记录）
-		addAssistantMessageToHistory(parsedResponse.content); // 添加到对话历史
 	}
 
 	// 检查是否有工具调用
@@ -500,14 +442,9 @@ async function callAIAndHandleResponse(loadingId) {
 		const codeContent = generateCodeFromToolCalls(parsedResponse.toolCalls); // 生成代码
 
 		// 创建代码块展示（等待用户确认）
-		createToolCallCodeBlock(codeContent, parsedResponse.toolCalls, message || {}, loadingId); // 创建代码块
+		createToolCallCodeBlock(codeContent, parsedResponse.toolCalls, loadingId); // 创建代码块
 	} else {
 		// 如果没有工具调用,说明模型已经完成回复
-		// 将助手消息添加到对话历史（用于本地记录,统一使用函数）
-		if (parsedResponse.content) {
-			addAssistantMessageToHistory(parsedResponse.content); // 使用统一函数添加到历史
-		}
-
 		// 移除加载指示器（如果还在显示）
 		removeLoadingIndicator(loadingId); // 移除加载动画
 	}
@@ -519,10 +456,9 @@ async function callAIAndHandleResponse(loadingId) {
  * 创建工具调用代码块（等待用户确认执行）
  * @param {string} codeContent - 代码内容
  * @param {Array} toolCalls - 工具调用数组
- * @param {Object} message - 消息对象
  * @param {string|null} loadingId - 加载指示器ID（可选,如果提供则在创建代码块后移除）
  */
-function createToolCallCodeBlock(codeContent, toolCalls, message, loadingId = null) {
+function createToolCallCodeBlock(codeContent, toolCalls, loadingId = null) {
 	// 创建代码容器
 	const codeContainer = document.createElement('div'); // 创建代码容器
 	codeContainer.className = 'code-block-container'; // 设置代码容器类名
@@ -544,7 +480,7 @@ function createToolCallCodeBlock(codeContent, toolCalls, message, loadingId = nu
 	confirmBtn.textContent = '确认执行'; // 设置按钮文本
 	confirmBtn.onclick = async () => {
 		// 点击事件
-		await executeToolCallsAndContinue(toolCalls, codeContainer, confirmBtn, message); // 执行工具调用并继续对话
+		await executeToolCallsAndContinue(toolCalls, codeContainer, confirmBtn); // 执行工具调用并继续对话
 	}; // 设置点击事件
 
 	actionContainer.appendChild(confirmBtn); // 将确认按钮添加到操作容器
@@ -584,10 +520,9 @@ function createToolCallCodeBlock(codeContent, toolCalls, message, loadingId = nu
  * @param {Array} toolResults - 工具执行结果数组
  * @param {Object} codeContainer - 代码容器DOM元素
  * @param {Object} button - 执行按钮DOM元素
- * @param {Object} message - 消息对象
  * @returns {Array} 工具输入消息数组（用于Responses API）
  */
-function handleToolExecutionResults(toolResults, codeContainer, button, message) {
+function handleToolExecutionResults(toolResults, codeContainer, button) {
 	// 格式化并显示执行结果
 	let allResults = []; // 初始化结果数组
 	for (const result of toolResults) {
@@ -603,11 +538,6 @@ function handleToolExecutionResults(toolResults, codeContainer, button, message)
 
 	// 更新按钮文本
 	button.textContent = '已执行'; // 更新按钮文本
-
-	// 将助手消息添加到对话历史（用于本地记录）
-	if (message) {
-		conversationHistory.push(message); // 添加到历史
-	}
 
 	// 准备工具执行结果消息（用于Responses API）
 	// 根据Responses API文档,工具执行结果应该作为input的一部分传入
@@ -639,16 +569,19 @@ async function continueConversationAfterTools(toolInputMessages) {
 	const loadingId = addLoadingIndicator(); // 添加加载指示器
 	updateUIState(UI_STATE.EXECUTING); // 切换到代码执行中状态
 	updateStatus('AI 正在处理结果...', 'info'); // 更新状态提示
-
 	// 调用Responses API,传入工具执行结果和previous_response_id
 	const response = await window.ArkAPI.callArkChat(
 		toolInputMessages, // 工具执行结果（作为input传入）
 		previousResponseId // 上一轮响应ID
 	); // 调用 ARK API
 
+	// 累加 total_tokens
+	totalTokensAccumulated += response.usage.total_tokens; // 累加 tokens
+	console.info('history', conversationHistory, `total_tokens累计: ${totalTokensAccumulated}`);//打印对话历史和累计tokens
+
 	// 解析响应
 	const parsedResponse = parseAIResponse(response); // 解析响应
-	const responseMessage = parsedResponse.message; // 获取消息对象
+	addAssistantMessageToHistory(parsedResponse.content, parsedResponse.toolCalls); // 添加到对话历史
 
 	// 更新上一轮响应ID（使用公共函数）
 	updatePreviousResponseId(parsedResponse.responseId); // 更新响应ID
@@ -656,15 +589,13 @@ async function continueConversationAfterTools(toolInputMessages) {
 	// 如果有内容,添加到界面
 	if (parsedResponse.content) {
 		addMessageToChat('assistant', parsedResponse.content); // 添加 AI 回复
-		// 添加到本地历史（统一使用函数）
-		addAssistantMessageToHistory(parsedResponse.content); // 使用统一函数添加到历史
 	}
 
 	// 检查是否还有工具调用
 	if (parsedResponse.toolCalls && parsedResponse.toolCalls.length > 0) {
 		// 如果有工具调用,生成代码块并等待用户确认
 		const codeContent = generateCodeFromToolCalls(parsedResponse.toolCalls); // 生成代码
-		createToolCallCodeBlock(codeContent, parsedResponse.toolCalls, responseMessage, loadingId); // 创建代码块
+		createToolCallCodeBlock(codeContent, parsedResponse.toolCalls, loadingId); // 创建代码块
 	} else {
 		// 如果没有工具调用,完成
 		removeLoadingIndicator(loadingId); // 移除加载动画
@@ -685,9 +616,8 @@ async function continueConversationAfterTools(toolInputMessages) {
  * @param {Array} toolCalls - 工具调用数组
  * @param {Object} codeContainer - 代码容器DOM元素
  * @param {Object} button - 执行按钮DOM元素
- * @param {Object} message - 消息对象
  */
-async function executeToolCallsAndContinue(toolCalls, codeContainer, button, message) {
+async function executeToolCallsAndContinue(toolCalls, codeContainer, button) {
 	// 禁用按钮并更新文本
 	button.disabled = true; // 禁用按钮
 	button.textContent = '执行中...'; // 更新按钮文本
@@ -696,7 +626,7 @@ async function executeToolCallsAndContinue(toolCalls, codeContainer, button, mes
 	const toolResults = await executeToolCalls(toolCalls); // 执行工具调用
 
 	// 处理工具执行结果
-	const toolInputMessages = handleToolExecutionResults(toolResults, codeContainer, button, message); // 处理结果并获取工具输入消息
+	const toolInputMessages = handleToolExecutionResults(toolResults, codeContainer, button); // 处理结果并获取工具输入消息
 
 	// 继续对话
 	await continueConversationAfterTools(toolInputMessages); // 继续对话
@@ -746,7 +676,10 @@ async function handleSendMessage() {
 			prepareUserMessageUI(message); // 处理用户消息UI
 		}, // UI 预处理
 		appendHistory: () => {
-			addUserMessageToHistory(message); // 添加到对话历史
+			conversationHistory.push({
+				role: 'user', // 用户角色
+				content: message, // 用户消息内容
+			}); // 添加到对话历史
 		}, // 写入历史
 		errorPrefix: 'AI 请求失败', // 错误前缀
 		needScroll: true, // 发送用户消息需要滚动
@@ -880,21 +813,12 @@ function ensureSystemMessage() {
 		return false; // 如果已有系统消息,直接返回
 	}
 
-	conversationHistory[0].role = 'system';
-	conversationHistory[0].content = window.top.systemMessage + conversationHistory[0].content;
+	conversationHistory.unshift({
+		role: 'system',
+		content: window.top.systemMessage
+	});
 
-	// 如果没有系统消息,说明是首次提问,需要定义ai能力,并设置tools
-	// window.ArkAPI.callArkChat([{ 
-	// 	role: 'system', // 系统角色
-	// 	content: window.top.systemMessage, // 系统消息内容
-	// 	type: 'message', // 消息类型
-	// }], previousResponseId, window.mcpEDA.toolDescriptions);
-	// // 添加到对话历史开头
-	// conversationHistory.unshift({ 
-	// 	role: 'system', // 系统角色
-	// 	content: window.top.systemMessage, // 系统消息内容
-	// 	type: 'message', // 消息类型
-	// }); // 添加到历史开头
+
 	console.log('已添加系统消息到对话历史'); // 输出日志
 	return true;
 }
@@ -1021,16 +945,11 @@ function scrollToBottom() {
 function loadConfig() {
 	try {
 		// 从 localStorage 读取配置
-		const savedApiKey = localStorage.getItem('ark_api_key'); // 读取 ARK API Key
-		const savedModel = localStorage.getItem('ark_model'); // 读取 ARK Model
-
+		const savedApiKey = localStorage.getItem('user_api_key'); // 读取 ARK API Key
 		// 如果存在配置,则更新 ARK API 模块
-		if (savedApiKey || savedModel) {
+		if (savedApiKey) {
 			// 调用 ark-api.js 的更新配置函数
-			if (window.ArkAPI && window.ArkAPI.updateConfig) {
-				// 如果 updateConfig 函数存在
-				window.ArkAPI.updateConfig(savedApiKey || '', savedModel || ''); // 更新配置
-			}
+			window.ArkAPI.updateConfig(savedApiKey || ''); // 更新配置
 		}
 	} catch (error) {
 		// 捕获配置加载错误
@@ -1044,12 +963,10 @@ function loadConfig() {
  */
 function handleConfigClick() {
 	// 从 localStorage 读取当前配置值
-	const currentApiKey = localStorage.getItem('ark_api_key') || ''; // 读取当前 API Key
-	const currentModel = localStorage.getItem('ark_model') || ''; // 读取当前 Model
+	const currentApiKey = localStorage.getItem('user_api_key') || ''; // 读取当前 API Key
 
 	// 填充输入框
 	arkApiKeyInput.value = currentApiKey; // 设置 API Key 输入框值
-	arkModelInput.value = currentModel; // 设置 Model 输入框值
 
 	// 显示配置对话框
 	configDialog.style.display = 'block'; // 显示对话框
@@ -1071,29 +988,20 @@ function handleSaveConfig() {
 	try {
 		// 获取输入框的值
 		const apiKey = arkApiKeyInput.value.trim(); // 获取 API Key 并去除首尾空格
-		const model = arkModelInput.value.trim(); // 获取 Model 并去除首尾空格
 
 		// 保存到 localStorage
 		if (apiKey) {
 			// 如果 API Key 不为空
-			localStorage.setItem('ark_api_key', apiKey); // 保存 API Key
+			localStorage.setItem('user_api_key', apiKey); // 保存 API Key
 		} else {
 			// 如果 API Key 为空
-			localStorage.removeItem('ark_api_key'); // 删除 API Key
-		}
-
-		if (model) {
-			// 如果 Model 不为空
-			localStorage.setItem('ark_model', model); // 保存 Model
-		} else {
-			// 如果 Model 为空
-			localStorage.removeItem('ark_model'); // 删除 Model
+			localStorage.removeItem('user_api_key'); // 删除 API Key
 		}
 
 		// 更新 ARK API 模块配置
 		if (window.ArkAPI && window.ArkAPI.updateConfig) {
 			// 如果 updateConfig 函数存在
-			window.ArkAPI.updateConfig(apiKey, model); // 更新配置
+			window.ArkAPI.updateConfig(apiKey); // 更新配置
 		}
 
 		// 关闭配置对话框
@@ -1113,6 +1021,42 @@ function handleSaveConfig() {
 			// 延迟清空状态
 			updateStatus('', ''); // 清空状态文本
 		}, 2000); // 2 秒后清空
+	}
+}
+
+/**
+ * 设置私服链接，传递用户信息
+ */
+async function setupPrivateServerLink() {
+	const privateServerLink = document.getElementById('privateServerLink'); // 获取私服链接元素
+	if (!privateServerLink) return; // 如果元素不存在，直接返回
+
+	let uinfo = ''; // 用户信息参数
+	try {
+		// 从 localStorage 读取用户登录信息
+		const isLogin = localStorage.getItem('isLogin'); // 读取登录信息
+		const loginData = JSON.parse(isLogin); // 解析 JSON 字符串
+		// 尝试从 LCEDA API 获取完整用户信息
+		const response = await fetch('https://u.lceda.cn/api/user', {
+			credentials: 'include' // 携带 cookie
+		}); // 调用 LCEDA API
+		const data = await response.json(); // 解析响应
+
+		if (isLogin && data.success && data.code === 0) {
+			// 构建用户信息对象（包含完整 LCEDA 信息）
+			const userInfo = {
+				uuid: loginData.uuid || '',
+				username: loginData.username || '',
+				avatar: loginData.avatar || '',
+				lceda_user_info: data.result || {} // 添加完整用户信息
+			};
+			uinfo = encodeURIComponent(JSON.stringify(userInfo)); // 编码 JSON 字符串
+			// 设置私服链接 URL
+			const serverUrl = 'https://113.46.209.138/login?uinfo=' + uinfo; // 构建完整 URL
+			privateServerLink.href = serverUrl; // 设置链接地址
+		}
+	} catch (error) {
+		console.error('解析登录信息失败:', error); // 输出错误日志
 	}
 }
 
