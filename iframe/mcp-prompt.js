@@ -4,7 +4,7 @@
 window.promptList = [
     {
         "name": "system_message",
-        "description": "AI 角色和职责定义，描述 AI 助手的专业背景和执行框架",
+        "description": "AI 角色和职责定义，描述 AI助手的专业背景和执行框架",
         "messages": [
             {
                 "role": "system",

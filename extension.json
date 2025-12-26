@@ -1,8 +1,8 @@
 {
-	"name": "pro-schematic-ai",
+	"name": "pro-schematic-ai-drafty",
 	"uuid": "7f5625494d16493692e4532279c15b58",
-	"displayName": "AI 助手",
-	"description": "基于嘉立创EDA专业版扩展API开发的原理图设计AI助手扩展包",
+	"displayName": "AI巧绘",
+	"description": "通过AI助手，可以快速生成原理图，并自动放置元件",
 	"version": "1.0.0",
 	"publisher": "JLCEDA",
 	"engines": {
@@ -11,15 +11,16 @@
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "github",
-		"url": "https://github.com/np1139059565/pro-schematic-ai"
+		"url": "https://github.com/np1139059565/pro-schematic-ai-drafty"
 	},
 	"categories": ["Schematic", "Other"],
 	"keywords": ["AI", "原理图", "EDA", "扩展", "助手", "对话", "自动放置"],
 	"images": {
-		"logo": "./images/logo.png"
+		"logo": "./images/logo.png",
+		"banner": "./images/banner.png"
 	},
-	"homepage": "https://github.com/np1139059565/pro-schematic-ai",
-	"bugs": "https://github.com/np1139059565/pro-schematic-ai/issues",
+	"homepage": "https://github.com/np1139059565/pro-schematic-ai-drafty",
+	"bugs": "https://github.com/np1139059565/pro-schematic-ai-drafty/issues",
 	"activationEvents": {},
 	"entry": "./dist/index",
 	"dependentExtensions": {},
@@ -27,7 +28,7 @@
 		"home": [
 			{
 				"id": "ai-assistant",
-				"title": "AI 助手",
+				"title": "AI巧绘",
 				"menuItems": [
 					{
 						"id": "About",
@@ -45,7 +46,7 @@
 		"sch": [
 			{
 				"id": "ai-assistant",
-				"title": "AI 助手",
+				"title": "AI巧绘",
 				"menuItems": [
 					{
 						"id": "About",
@@ -63,7 +64,7 @@
 		"pcb": [
 			{
 				"id": "ai-assistant",
-				"title": "AI 助手",
+				"title": "AI巧绘",
 				"menuItems": [
 					{
 						"id": "About",

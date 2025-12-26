@@ -45,7 +45,7 @@ const UI_STATE = {
 let currentUIState = UI_STATE.IDLE; // 当前界面状态
 
 
-// 系统消息 - 用于描述 AI 角色和职责,用户可以在控制台临时修改系统消息,对ai助手进行定制化
+// 系统消息 - 用于描述 AI 角色和职责,用户可以在控制台临时修改系统消息,对AI巧绘进行定制化
 window.top.systemMessage = window.promptList.find(prompt => prompt.name === 'system_message').messages[0].content.text;
 // 初始化函数
 function init() {
@@ -986,7 +986,7 @@ function handleClearChat() {
 		const welcomeDiv = document.createElement('div'); // 创建欢迎消息容器
 		welcomeDiv.className = 'welcome-message'; // 设置欢迎消息类名
 		welcomeDiv.innerHTML = `
-			<p>你好！我是原理图设计 AI 助手,专门帮助你进行原理图设计.</p>
+			<p>你好！我是原理图设计 AI巧绘,专门帮助你进行原理图设计.</p>
 			<p>我可以帮你:</p>
 			<ul style="text-align: left; display: inline-block; margin-top: 8px;">
 				<li>解答原理图设计相关问题</li>

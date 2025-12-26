@@ -24,8 +24,8 @@ export function about(): void {
 
 
 /**
- * 打开原理图设计 AI 助手对话框
- * 使用 iframe 方式打开原理图设计 AI 助手界面，支持与火山引擎 ARK API 交互
+ * 打开原理图设计 AI巧绘对话框
+ * 使用 iframe 方式打开原理图设计 AI巧绘界面，支持与火山引擎 ARK API 交互
  * 专门用于原理图设计相关的 AI 对话和咨询
  */
 export function openAiChat(): void {
