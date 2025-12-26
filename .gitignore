@@ -9,4 +9,5 @@ debug.log
 /.cursor
 /build/dist/*
 /logs/*
+/readmes/
 /ai_schematic_private/

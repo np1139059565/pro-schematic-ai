@@ -1,8 +1,8 @@
 # AI 思维导图 - 嘉立创EDA原理图设计AI执行框架
 
-> **数据来源**:`iframe/jdb.js` 中的 `jdbPromptList`  
+> **数据来源**:`iframe/mcp-prompt.js` 中的 `window.promptList`  
 > **更新说明**:本文档基于实际代码生成，反映当前系统的真实架构和执行流程  
-> **代码结构**:实际代码中 `jdbPromptList` 的顺序为:system_message → 流程引导层 → 规则约束层 → 智能执行层
+> **代码结构**:实际代码中 `window.promptList` 的顺序为:system_message → 流程引导层 → 规则约束层 → 智能执行层
 
 ---
 
@@ -425,302 +425,49 @@
     └── 检查点:最终验证通过(必需)- 设计完全符合规范
 ```
 
-### 2.5 工作流:库管理流程 (workflow_library_management)
-
-```
-库管理流程
-│
-├── 流程描述:管理器件库、符号库、封装库、3D模型库、复用模块库等
-│
-├── 节点序列:
-│   1. library_selection(库选择)
-│   2. library_content_search(库内容搜索)
-│   3. library_content_selection(库内容选择)
-│   4. library_content_creation_modification(库内容创建/修改)
-│   5. library_content_validation(库内容验证)
-│
-├── 节点规则:
-│   - library_selection:
-│     * 推荐工具:lib_LibrariesList$getAllLibrariesList,lib_LibrariesList$getPersonalLibraryUuid,lib_LibrariesList$getSystemLibraryUuid
-│     * 规则:根据需求选择合适的库(个人库/系统库/工程库);获取库的UUID信息
-│     * 检查点:库选择完成(必需)- 已确定要使用的库(libraryUuid)
-│
-│   - library_content_search:
-│     * 推荐工具:lib_Device$search,lib_Symbol$search,lib_Footprint$search,lib_3DModel$search,lib_Cbb$search
-│     * 规则:根据库类型和搜索条件搜索库内容;支持分页搜索(带itemsOfPage/page必须提供libraryUuid)
-│     * 检查点:库内容搜索完成(必需)- 已搜索到目标库内容
-│
-│   - library_content_selection:
-│     * 推荐工具:lib_Device$get,lib_Symbol$get,lib_Footprint$get,lib_3DModel$get,lib_Cbb$get
-│     * 规则:获取库内容的详细信息(uuid,libraryUuid等);确认要使用的库内容
-│     * 检查点:库内容选择完成(必需)- 已确定要使用的库内容(uuid,libraryUuid)
-│
-│   - library_content_creation_modification:
-│     * 推荐工具:lib_Device$create,lib_Device$modify,lib_Symbol$create,lib_Symbol$modify,lib_Footprint$create,lib_Footprint$modify
-│     * 规则:创建新库内容或修改现有库内容;确保库内容属性完整;分类管理(lib_Classification.*)
-│     * 检查点:库内容创建/修改完成(必需)- 库内容已成功创建或修改
-│
-│   - library_content_validation:
-│     * 推荐工具:lib_Device$get,lib_Symbol$get,lib_Footprint$get
-│     * 规则:验证库内容属性完整性;检查库内容是否符合规范
-│     * 检查点:库内容验证通过(必需)- 库内容符合规范
-```
-
-### 2.6 工作流:文档和工程管理流程 (workflow_project_document_management)
-
-```
-文档和工程管理流程
-│
-├── 流程描述:管理工程、原理图、PCB、板子等文档的创建、打开、保存、导入导出
-│
-├── 节点序列:
-│   1. project_selection_creation(工程选择/创建)
-│   2. document_creation_opening(文档创建/打开)
-│   3. document_operation(文档操作)
-│   4. document_save(文档保存)
-│
-├── 节点规则:
-│   - project_selection_creation:
-│     * 推荐工具:dmt_Project$getAllProjectsUuid,dmt_Project$getProjectInfo,dmt_Project$createProject,dmt_Project$openProject
-│     * 规则:根据需求选择现有工程或创建新工程;获取工程信息(uuid,name等)
-│     * 检查点:工程选择/创建完成(必需)- 已确定要使用的工程(projectUuid)
-│
-│   - document_creation_opening:
-│     * 推荐工具:dmt_Schematic$createSchematic,dmt_Schematic$getAllSchematicsInfo,dmt_Pcb$createPcb,dmt_Pcb$getAllPcbsInfo,dmt_EditorControl$openDocument
-│     * 规则:根据需求创建新文档或打开现有文档;获取文档信息(uuid,name等)
-│     * 检查点:文档创建/打开完成(必需)- 文档已成功创建或打开
-│
-│   - document_operation:
-│     * 推荐工具:dmt_EditorControl$activateDocument,dmt_Schematic$modifySchematicName,dmt_Pcb$modifyPcbName,dmt_Board$modifyBoardName
-│     * 规则:执行文档操作(激活、重命名等);管理文档结构(图页、板子等)
-│     * 检查点:文档操作完成(必需)- 文档操作已成功执行
-│
-│   - document_save:
-│     * 推荐工具:sch_Document$save,pcb_Document$save,sys_FileManager$getProjectFile
-│     * 规则:保存文档修改;导出文档文件(如需要)
-│     * 检查点:文档保存完成(必需)- 文档已成功保存
-```
-
-### 2.7 工作流:图形绘制和标注流程 (workflow_graphics_annotation)
-
-```
-图形绘制和标注流程
-│
-├── 流程描述:创建和编辑文本、矩形、圆形、圆弧、多边形等图形元素
-│
-├── 节点序列:
-│   1. graphics_type_selection(图形类型选择)
-│   2. position_planning(位置规划)
-│   3. graphics_creation(图形创建)
-│   4. graphics_property_setting(图形属性设置)
-│   5. graphics_validation(图形验证)
-│
-├── 节点规则:
-│   - graphics_type_selection:
-│     * 推荐工具:无
-│     * 规则:根据需求确定图形类型(文本/矩形/圆形/圆弧/多边形)
-│     * 检查点:图形类型选择完成(必需)- 已确定图形类型
-│
-│   - position_planning:
-│     * 推荐工具:getCanvasSize,sch_PrimitiveComponent$getAll,sch_PrimitiveWire$getAll
-│     * 规则:分析现有布局，确定图形放置位置(x,y坐标);确保不遮挡重要元件和导线
-│     * 检查点:位置规划完成(必需)- 已确定图形放置位置(x,y坐标)
-│
-│   - graphics_creation:
-│     * 推荐工具:sch_PrimitiveText$create,sch_PrimitiveRectangle$create,sch_PrimitiveCircle$create,sch_PrimitiveArc$create,sch_PrimitivePolygon$create
-│     * 规则:创建图形元素;确保坐标在画布范围内;设置基本属性(颜色、线宽等)
-│     * 检查点:图形创建完成(必需)- 图形已成功创建
-│
-│   - graphics_property_setting:
-│     * 推荐工具:sch_PrimitiveText$modify,sch_PrimitiveRectangle$modify,sch_PrimitiveCircle$modify,sch_PrimitiveArc$modify,sch_PrimitivePolygon$modify
-│     * 规则:设置图形属性(颜色、线宽、填充、字体等);确保属性值有效
-│     * 检查点:图形属性设置完成(必需)- 图形属性已成功设置
-│
-│   - graphics_validation:
-│     * 推荐工具:sch_PrimitiveText$get,sch_PrimitiveRectangle$get,sch_PrimitiveCircle$get
-│     * 规则:验证图形位置和属性是否符合要求;检查图形是否在画布范围内
-│     * 检查点:图形验证通过(必需)- 图形符合规范
-```
-
-### 2.8 工作流:网络标识和端口管理流程 (workflow_net_flag_port_management)
-
-```
-网络标识和端口管理流程
-│
-├── 流程描述:创建和管理网络标识、网络端口、短接标识、总线等
-│
-├── 节点序列:
-│   1. network_analysis(网络分析)
-│   2. flag_type_selection(标识类型选择)
-│   3. flag_creation(标识创建)
-│   4. flag_validation(标识验证)
-│
-├── 节点规则:
-│   - network_analysis:
-│     * 推荐工具:sch_PrimitiveComponent$getAll,sch_PrimitiveWire$getAll,sch_Netlist$getNetlist
-│     * 规则:分析现有网络连接;识别需要添加标识的网络(电源/地/输入/输出等)
-│     * 检查点:网络分析完成(必需)- 已识别需要添加标识的网络
-│
-│   - flag_type_selection:
-│     * 推荐工具:无
-│     * 规则:根据网络类型选择合适的标识类型(网络标识/网络端口/短接标识/总线)
-│     * 检查点:标识类型选择完成(必需)- 已确定标识类型
-│
-│   - flag_creation:
-│     * 推荐工具:sch_PrimitiveComponent$createNetFlag,sch_PrimitiveComponent$createNetPort,sch_PrimitiveComponent$createShortCircuitFlag,sch_PrimitiveBus$create
-│     * 规则:创建网络标识/端口/总线;设置网络名称;关联到相应元件(如需要)
-│     * 检查点:标识创建完成(必需)- 网络标识/端口/总线已成功创建
-│
-│   - flag_validation:
-│     * 推荐工具:sch_PrimitiveComponent$getAll,sch_PrimitiveBus$getAll,sch_Netlist$getNetlist
-│     * 规则:验证网络标识是否正确关联;检查网络连接是否完整
-│     * 检查点:标识验证通过(必需)- 网络标识符合规范
-```
-
-### 2.9 工作流:网表操作流程 (workflow_netlist_operation)
-
-```
-网表操作流程
-│
-├── 流程描述:获取、更新、对比网表文件
-│
-├── 节点序列:
-│   1. netlist_retrieval(网表获取)
-│   2. netlist_analysis(网表分析)
-│   3. netlist_update_comparison(网表更新/对比)
-│   4. netlist_validation(网表验证)
-│
-├── 节点规则:
-│   - netlist_retrieval:
-│     * 推荐工具:sch_Netlist$getNetlist,sch_ManufactureData$getNetlistFile
-│     * 规则:获取当前设计的网表信息;获取网表文件(如需要)
-│     * 检查点:网表获取完成(必需)- 已获取网表信息
-│
-│   - netlist_analysis:
-│     * 推荐工具:无
-│     * 规则:分析网表结构;识别网络连接关系;检查网表完整性
-│     * 检查点:网表分析完成(必需)- 已分析网表结构
-│
-│   - netlist_update_comparison:
-│     * 推荐工具:sch_Netlist$setNetlist,sys_Tool$netlistComparison
-│     * 规则:更新网表信息(如需要);对比两个网表的差异(如需要)
-│     * 检查点:网表更新/对比完成(必需)- 网表已更新或对比完成
-│
-│   - netlist_validation:
-│     * 推荐工具:sch_Netlist$getNetlist,sch_PrimitiveComponent$getAll,sch_PrimitiveWire$getAll
-│     * 规则:验证网表与设计的一致性;检查网络连接是否正确
-│     * 检查点:网表验证通过(必需)- 网表符合规范
-```
-
-### 2.10 工作流:DRC检查流程 (workflow_drc_check)
-
-```
-DRC检查流程
-│
-├── 流程描述:执行原理图和PCB的设计规则检查
-│
-├── 节点序列:
-│   1. drc_configuration(DRC配置)
-│   2. drc_execution(DRC执行)
-│   3. error_analysis(错误分析)
-│   4. error_fix(错误修复)
-│   5. recheck(重新检查)
-│
-├── 节点规则:
-│   - drc_configuration:
-│     * 推荐工具:pcb_Drc$getAllRuleConfigurations,pcb_Drc$getCurrentRuleConfiguration,pcb_Drc$saveRuleConfiguration
-│     * 规则:配置设计规则检查项;选择或创建规则配置;设置规则参数
-│     * 检查点:DRC配置完成(必需)- 已配置设计规则
-│
-│   - drc_execution:
-│     * 推荐工具:sch_Drc$check,pcb_Drc$check
-│     * 规则:执行设计规则检查;获取检查结果(错误列表)
-│     * 检查点:DRC执行完成(必需)- 已获取检查结果
-│
-│   - error_analysis:
-│     * 推荐工具:无
-│     * 规则:分析DRC错误;分类错误类型(间距/连接/规则等);确定错误优先级
-│     * 检查点:错误分析完成(必需)- 已分析所有错误
-│
-│   - error_fix:
-│     * 推荐工具:sch_PrimitiveComponent$modify,sch_PrimitiveWire$modify,sch_PrimitiveWire$delete
-│     * 规则:修复DRC错误;保持设计功能不变;记录修复操作
-│     * 检查点:错误修复完成(必需)- 已修复所有可修复的错误
-│
-│   - recheck:
-│     * 推荐工具:sch_Drc$check,pcb_Drc$check
-│     * 规则:重新执行DRC检查;验证错误是否已修复
-│     * 检查点:重新检查完成(必需)- 所有错误已修复或已记录
-```
-
-### 2.11 工作流:制造数据导出流程 (workflow_manufacture_data_export)
-
-```
-制造数据导出流程
-│
-├── 流程描述:导出BOM、网表、Gerber、坐标文件等制造相关数据
-│
-├── 节点序列:
-│   1. data_requirement_analysis(数据需求分析)
-│   2. data_format_selection(数据格式选择)
-│   3. data_export(数据导出)
-│   4. data_validation(数据验证)
-│
-├── 节点规则:
-│   - data_requirement_analysis:
-│     * 推荐工具:sch_PrimitiveComponent$getAll,pcb_PrimitiveComponent$getAll
-│     * 规则:分析需要导出的数据类型(BOM/网表/Gerber/坐标等);确定导出范围
-│     * 检查点:数据需求分析完成(必需)- 已确定需要导出的数据类型
-│
-│   - data_format_selection:
-│     * 推荐工具:无
-│     * 规则:根据制造需求选择数据格式;确认文件格式兼容性
-│     * 检查点:数据格式选择完成(必需)- 已确定数据格式
-│
-│   - data_export:
-│     * 推荐工具:sch_ManufactureData$getBomFile,sch_ManufactureData$getNetlistFile,pcb_ManufactureData$getGerberFile,pcb_ManufactureData$getPickAndPlaceFile
-│     * 规则:导出制造数据文件;确保文件格式正确;保存文件路径
-│     * 检查点:数据导出完成(必需)- 制造数据文件已成功导出
-│
-│   - data_validation:
-│     * 推荐工具:无
-│     * 规则:验证导出数据的完整性;检查文件格式是否正确;确认数据准确性
-│     * 检查点:数据验证通过(必需)- 导出数据符合要求
-```
-
-### 2.12 工作流:选择和交互流程 (workflow_selection_interaction)
+### 2.5 工作流:选择和交互流程 (workflow_selection_interaction)
 
 ```
 选择和交互流程
 │
-├── 流程描述:图元选择、事件监听、编辑器控制等交互操作
+├── 流程描述:感知用户已选择的图元，结合用户意图进行操作，使AI助手能够理解用户当前选中的元件并执行相应操作
+│
+├── 核心原则:
+│   - AI助手应首先获取用户当前已选中的图元，然后结合用户的意图对这些图元进行操作
+│   - 用户通过鼠标选择图元后，AI助手应能感知到这些选择，并据此执行操作
 │
 ├── 节点序列:
-│   1. selection_mode_determination(选择模式确定)
-│   2. primitive_selection(图元选择)
-│   3. selection_operation(选择操作)
+│   1. get_user_selection(获取用户选择)
+│   2. understand_user_intent(理解用户意图)
+│   3. operate_on_selection(对选中图元执行操作)
 │   4. interaction_feedback(交互反馈)
 │
 ├── 节点规则:
-│   - selection_mode_determination:
+│   - get_user_selection:
+│     * 推荐工具:sch_SelectControl$getAllSelectedPrimitives,sch_SelectControl$getCurrentMousePosition
+│     * 规则:首先获取用户当前已选中的图元列表(使用sch_SelectControl$getAllSelectedPrimitives);如果用户没有选中图元，可以询问用户后继续;必须明确当前有哪些图元被用户选中
+│     * 检查点:获取用户选择完成(必需)- 已获取用户当前选中的图元列表，或已确认用户未选中任何图元
+│
+│   - understand_user_intent:
 │     * 推荐工具:无
-│     * 规则:根据操作需求确定选择模式(单选/多选/区域选择等)
-│     * 检查点:选择模式确定完成(必需)- 已确定选择模式
+│     * 规则:结合用户已选中的图元，理解用户的操作意图;分析用户想要对这些选中图元执行什么操作(如:修改属性、移动位置、删除、布线等);如果用户未选中图元，应提示用户先选择图元
+│     * 检查点:理解用户意图完成(必需)- 已理解用户对选中图元的操作意图，或已提示用户先选择图元
 │
-│   - primitive_selection:
-│     * 推荐工具:sch_SelectControl$doSelectPrimitives,pcb_SelectControl$doSelectPrimitives,sch_SelectControl$getAllSelectedPrimitives
-│     * 规则:选择目标图元(通过primitiveId);获取选中图元信息
-│     * 检查点:图元选择完成(必需)- 已成功选择目标图元
-│
-│   - selection_operation:
-│     * 推荐工具:sch_SelectControl$getAllSelectedPrimitives,pcb_SelectControl$getAllSelectedPrimitives,sch_SelectControl$clearSelected
-│     * 规则:对选中图元执行操作;管理选择状态(清除选择等)
-│     * 检查点:选择操作完成(必需)- 选择操作已成功执行
+│   - operate_on_selection:
+│     * 推荐工具:sch_PrimitiveComponent$modify,sch_PrimitiveComponent$delete,sch_PrimitiveWire$create,sch_PrimitiveComponent$getAllPinsByPrimitiveId,calculateComponentBounds,sch_SelectControl$clearSelected
+│     * 规则:根据用户意图，对用户已选中的图元执行相应操作;操作前应验证选中图元的有效性;操作完成后可以清除选择状态(使用sch_SelectControl$clearSelected);支持的操作包括但不限于:修改属性、移动位置、删除、获取引脚信息、计算边界、创建连接等
+│     * 检查点:操作执行完成(必需)- 已根据用户意图对选中图元执行相应操作
 │
 │   - interaction_feedback:
-│     * 推荐工具:sch_Event$addMouseEventListener,pcb_Event$addMouseEventListener,dmt_EditorControl$zoomToSelectedPrimitives
-│     * 规则:提供交互反馈(高亮/缩放等);监听用户交互事件(如需要)
-│     * 检查点:交互反馈完成(必需)- 已提供交互反馈
+│     * 推荐工具:dmt_EditorControl$zoomToSelectedPrimitives
+│     * 规则:提供交互反馈(高亮/缩放等);使用dmt_EditorControl$zoomToSelectedPrimitives缩放到选中图元，提供视觉反馈
+│     * 检查点:交互反馈完成(可选)- 已提供交互反馈
+│
+└── 重要提示:
+    - 本流程的核心是"感知用户已选择的图元"，AI助手应主动调用sch_SelectControl$getAllSelectedPrimitives获取用户当前选中的图元
+    - 如果用户未选中任何图元，AI助手应提示用户先选择图元，而不是主动选择图元
+    - 只有在用户明确要求选择特定图元时，才使用sch_SelectControl$doSelectPrimitives主动选择图元
+    - 操作完成后，可以使用dmt_EditorControl$zoomToSelectedPrimitives提供视觉反馈
 ```
 
 ---
@@ -793,13 +540,6 @@ Plan (Planning + Execution) 执行模式
     │   ├── workflow_component_design(元件设计)
     │   ├── workflow_wiring_design(布线设计)
     │   ├── workflow_validation_optimization(验证优化)
-    │   ├── workflow_library_management(库管理)
-    │   ├── workflow_project_document_management(文档工程管理)
-    │   ├── workflow_graphics_annotation(图形标注)
-    │   ├── workflow_net_flag_port_management(网络端口管理)
-    │   ├── workflow_netlist_operation(网表操作)
-    │   ├── workflow_drc_check(DRC检查)
-    │   ├── workflow_manufacture_data_export(制造数据导出)
     │   └── workflow_selection_interaction(选择交互)
     └── 根据执行方式，获取执行模式指导
         ├── react(ReAct模式)
@@ -900,9 +640,9 @@ Plan (Planning + Execution) 执行模式
     │   └── 数据验证
     │
     └──→ 选择交互工作流
-        ├── 选择模式确定
-        ├── 图元选择
-        ├── 选择操作
+        ├── 获取用户选择
+        ├── 理解用户意图
+        ├── 对选中图元执行操作
         └── 交互反馈
 ```
 
